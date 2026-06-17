@@ -204,29 +204,18 @@ class GradeCheckApi {
 
   bool _isAllowedSmsSemester(String semester) {
     final normalized = semester.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '');
-    if (normalized.contains('tri') || normalized.contains('trimester') || normalized.contains('3rd')) {
+    if (normalized.contains('tri') || normalized.contains('trimester') || normalized.contains('3rd') || normalized.contains('third')) {
       return false;
     }
-    const allowed = {
-      '1',
-      '1st',
-      '1stsem',
-      '1stsemester',
-      'first',
-      'firstsem',
-      'firstsemester',
-      '2',
-      '2nd',
-      '2ndsem',
-      '2ndsemester',
-      'second',
-      'secondsem',
-      'secondsemester',
-      'summer',
-      'summersem',
-      'summersemester',
-    };
-    return allowed.contains(normalized);
+    return normalized == '1' ||
+        normalized == '1st' ||
+        normalized.contains('1stsem') ||
+        normalized.contains('first') ||
+        normalized == '2' ||
+        normalized == '2nd' ||
+        normalized.contains('2ndsem') ||
+        normalized.contains('second') ||
+        normalized.contains('summer');
   }
 
   Future<List<GradePeriod>> fetchPeriods() async {

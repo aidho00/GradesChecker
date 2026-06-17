@@ -9,6 +9,9 @@ import 'models/grade_row.dart';
 import 'services/grade_check_api.dart';
 
 const double _uiScale = 0.78;
+const double _kHeaderFontSize = 15.0;
+const double _kTableFontSize = 11.0;
+const double _kBodyFontSize = 12.0;
 double _s(num value) => value * _uiScale;
 
 void main() {
@@ -40,9 +43,9 @@ class GradesCheckerApp extends StatelessWidget {
           ),
         ),
         inputDecorationTheme: InputDecorationTheme(
-          labelStyle: const TextStyle(fontSize: 11.5, color: Color(0xFF64748B), fontWeight: FontWeight.w700),
-          floatingLabelStyle: const TextStyle(fontSize: 11.5, color: Color(0xFF475569), fontWeight: FontWeight.w800),
-          hintStyle: const TextStyle(fontSize: 12.0, color: Color(0xFF64748B)),
+          labelStyle: const TextStyle(fontSize: _kTableFontSize, color: Color(0xFF64748B), fontWeight: FontWeight.w700),
+          floatingLabelStyle: const TextStyle(fontSize: _kTableFontSize, color: Color(0xFF475569), fontWeight: FontWeight.w800),
+          hintStyle: const TextStyle(fontSize: _kBodyFontSize, color: Color(0xFF64748B)),
           filled: true,
           fillColor: Colors.white,
           contentPadding: EdgeInsets.symmetric(horizontal: _s(10), vertical: _s(10)),
@@ -286,8 +289,8 @@ class _GradesCheckerPageState extends State<GradesCheckerPage> {
         _periods = periods;
         _selectedPeriod = selected;
         _status = periods.isEmpty
-            ? 'No academic years found in tbl_period. Import the database data first.'
-            : 'Select an academic year, then upload the UNO promotional list.';
+            ? 'No academic years found in tbl_period. Check the Database period records and semester names.'
+            : 'Selected academic year: ${selected?.label ?? periods.first.label}. Upload the UNO promotional list to continue.';
       });
     } catch (error) {
       setState(() {
@@ -583,7 +586,7 @@ class _GradesCheckerPageState extends State<GradesCheckerPage> {
               children: [
                 const Text(
                   'Change this only when Apache is running on another port, folder, or server IP.',
-                  style: TextStyle(color: Color(0xFF64748B), fontSize: 12),
+                  style: TextStyle(color: Color(0xFF64748B), fontSize: _kBodyFontSize),
                 ),
                 SizedBox(height: _s(10)),
                 TextField(
@@ -665,14 +668,14 @@ class _GradesCheckerPageState extends State<GradesCheckerPage> {
                       child: Text(row.message!, style: TextStyle(color: visual.color, fontWeight: FontWeight.w800)),
                     ),
                   SizedBox(height: _s(14)),
-                  Text('Selected-period grade records (${row.databaseMatches.length})', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 15)),
+                  Text('Selected-period grade records (${row.databaseMatches.length})', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: _kHeaderFontSize)),
                   SizedBox(height: _s(8)),
                   if (row.databaseMatches.isEmpty)
                     const Text('No database grade record returned for this subject and selected period.', style: TextStyle(color: Color(0xFF64748B)))
                   else
                     _DatabaseMatchesTable(matches: row.databaseMatches),
                   SizedBox(height: _s(16)),
-                  Text('Other-period grade records (${row.otherPeriodMatches.length})', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 15)),
+                  Text('Other-period grade records (${row.otherPeriodMatches.length})', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: _kHeaderFontSize)),
                   SizedBox(height: _s(8)),
                   if (row.otherPeriodMatches.isEmpty)
                     const Text('No grade record found for this same student and subject in other academic periods.', style: TextStyle(color: Color(0xFF64748B)))
@@ -741,22 +744,26 @@ class _GradesCheckerPageState extends State<GradesCheckerPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('UNO to SMS Grade Checker', style: TextStyle(fontSize: 19, fontWeight: FontWeight.w900)),
+              Text('UNO to SMS Grade Checker', style: TextStyle(fontSize: _kHeaderFontSize, fontWeight: FontWeight.w900)),
               SizedBox(height: 2),
               Text(
                 'Cross-check legacy UNO promotional-list grades against current SMS Database grade records.',
-                style: TextStyle(color: Color(0xFF64748B), fontSize: 12),
+                style: TextStyle(color: Color(0xFF64748B), fontSize: _kBodyFontSize),
               ),
             ],
           ),
         ),
-        if (_selectedPeriod != null) ...[
-          SizedBox(
+        ConstrainedBox(
+          constraints: BoxConstraints(maxWidth: _s(300)),
+          child: SizedBox(
             height: _s(36),
-            child: _SoftPill(icon: Icons.calendar_month_rounded, label: _selectedPeriod!.label),
+            child: _SoftPill(
+              icon: Icons.calendar_month_rounded,
+              label: _selectedPeriod?.label ?? (_loadingPeriods ? 'Loading academic years...' : 'No academic year selected'),
+            ),
           ),
-          SizedBox(width: _s(8)),
-        ],
+        ),
+        SizedBox(width: _s(8)),
         SizedBox(
           height: _s(36),
           child: OutlinedButton.icon(
@@ -765,7 +772,7 @@ class _GradesCheckerPageState extends State<GradesCheckerPage> {
             label: const Text('Connection'),
             style: OutlinedButton.styleFrom(
               padding: EdgeInsets.symmetric(horizontal: _s(14)),
-              textStyle: const TextStyle(fontSize: 12.2, fontWeight: FontWeight.w800),
+              textStyle: const TextStyle(fontSize: _kBodyFontSize, fontWeight: FontWeight.w800),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
             ),
           ),
@@ -787,9 +794,9 @@ class _GradesCheckerPageState extends State<GradesCheckerPage> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('UNO import check setup', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w900)),
+                      Text('UNO import check setup', style: TextStyle(fontSize: _kHeaderFontSize, fontWeight: FontWeight.w900)),
                       SizedBox(height: 3),
-                      Text('Select the SMS academic year, upload the UNO promotional list, then run the comparison.', style: TextStyle(color: Color(0xFF64748B), fontSize: 12)),
+                      Text('Select the SMS academic year, upload the UNO promotional list, then run the comparison.', style: TextStyle(color: Color(0xFF64748B), fontSize: _kBodyFontSize)),
                     ],
                   ),
                 ),
@@ -802,6 +809,8 @@ class _GradesCheckerPageState extends State<GradesCheckerPage> {
                 final controlHeight = _s(42);
                 final buttonStyle = OutlinedButton.styleFrom(
                   padding: EdgeInsets.symmetric(horizontal: _s(12)),
+                  textStyle: const TextStyle(fontSize: _kBodyFontSize, fontWeight: FontWeight.w800),
+                  foregroundColor: const Color(0xFF445487),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(_s(10))),
                 );
                 Widget uploadButton({double? width}) => SizedBox(
@@ -810,9 +819,10 @@ class _GradesCheckerPageState extends State<GradesCheckerPage> {
                       child: FilledButton.icon(
                         onPressed: _isBusy ? null : _pickExcel,
                         icon: const Icon(Icons.upload_file_rounded, size: 16),
-                        label: const FittedBox(fit: BoxFit.scaleDown, child: Text('Upload Excel', maxLines: 1)),
+                        label: const Text('Upload Excel', maxLines: 1, overflow: TextOverflow.ellipsis),
                         style: FilledButton.styleFrom(
                           padding: EdgeInsets.symmetric(horizontal: _s(12)),
+                          textStyle: const TextStyle(fontSize: _kBodyFontSize, fontWeight: FontWeight.w800),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(_s(10))),
                         ),
                       ),
@@ -823,7 +833,7 @@ class _GradesCheckerPageState extends State<GradesCheckerPage> {
                       child: OutlinedButton.icon(
                         onPressed: _isBusy ? null : _checkDatabase,
                         icon: const Icon(Icons.manage_search_rounded, size: 16),
-                        label: const FittedBox(fit: BoxFit.scaleDown, child: Text('Check', maxLines: 1)),
+                        label: const Text('Check', maxLines: 1, overflow: TextOverflow.ellipsis),
                         style: buttonStyle,
                       ),
                     );
@@ -833,7 +843,7 @@ class _GradesCheckerPageState extends State<GradesCheckerPage> {
                       child: OutlinedButton.icon(
                         onPressed: _isBusy || _rows.isEmpty ? null : _exportExcel,
                         icon: const Icon(Icons.file_download_rounded, size: 16),
-                        label: const FittedBox(fit: BoxFit.scaleDown, child: Text('Export Excel', maxLines: 1)),
+                        label: const Text('Export Excel', maxLines: 1, overflow: TextOverflow.ellipsis),
                         style: buttonStyle,
                       ),
                     );
@@ -857,13 +867,18 @@ class _GradesCheckerPageState extends State<GradesCheckerPage> {
                   );
                 }
 
-                final uploadWidth = constraints.maxWidth < _s(1120) ? _s(126) : _s(142);
-                final checkWidth = constraints.maxWidth < _s(1120) ? _s(92) : _s(104);
-                final exportWidth = constraints.maxWidth < _s(1120) ? _s(130) : _s(146);
+                final uploadWidth = constraints.maxWidth < _s(1120) ? _s(132) : _s(142);
+                final checkWidth = constraints.maxWidth < _s(1120) ? _s(96) : _s(104);
+                final exportWidth = constraints.maxWidth < _s(1120) ? _s(138) : _s(150);
+                final actionWidth = uploadWidth + checkWidth + exportWidth + _s(32);
+                final periodWidth = math
+                    .min(_s(500), math.max(_s(330), constraints.maxWidth - actionWidth - _s(24)))
+                    .toDouble();
                 return Row(
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
-                    Expanded(child: SizedBox(height: controlHeight, child: _buildPeriodSelector())),
+                    SizedBox(width: periodWidth, height: controlHeight, child: _buildPeriodSelector()),
+                    const Spacer(),
                     SizedBox(width: _s(8)),
                     uploadButton(width: uploadWidth),
                     SizedBox(width: _s(8)),
@@ -895,6 +910,7 @@ class _GradesCheckerPageState extends State<GradesCheckerPage> {
       isExpanded: true,
       decoration: InputDecoration(
         labelText: 'Academic Year',
+        hintText: _loadingPeriods ? 'Loading academic years...' : 'Select academic year',
         prefixIcon: const Icon(Icons.event_note_rounded, size: 18),
         suffixIcon: _loadingPeriods
             ? Padding(
@@ -910,7 +926,7 @@ class _GradesCheckerPageState extends State<GradesCheckerPage> {
       items: _periods
           .map((period) => DropdownMenuItem<String>(
                 value: period.id,
-                child: Text(period.label, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12)),
+                child: Text(period.label, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: _kBodyFontSize)),
               ))
           .toList(),
       onChanged: _isBusy
@@ -956,7 +972,7 @@ class _GradesCheckerPageState extends State<GradesCheckerPage> {
             children: [
               const Icon(Icons.timeline_rounded, size: 17, color: Color(0xFF2563EB)),
               SizedBox(width: _s(7)),
-              Expanded(child: Text(label, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12))),
+              Expanded(child: Text(label, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: _kBodyFontSize))),
             ],
           ),
           SizedBox(height: _s(8)),
@@ -987,7 +1003,7 @@ class _GradesCheckerPageState extends State<GradesCheckerPage> {
           Icon(failed ? Icons.error_outline_rounded : Icons.info_outline_rounded,
               color: failed ? const Color(0xFFB91C1C) : const Color(0xFF1D4ED8), size: 18),
           SizedBox(width: _s(7)),
-          Expanded(child: Text(_status, maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(color: failed ? const Color(0xFF991B1B) : const Color(0xFF1E3A8A), fontSize: 12))),
+          Expanded(child: Text(_status, maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(color: failed ? const Color(0xFF991B1B) : const Color(0xFF1E3A8A), fontSize: _kBodyFontSize))),
         ],
       ),
     );
@@ -1182,7 +1198,7 @@ class _GradesCheckerPageState extends State<GradesCheckerPage> {
                   child: Text(
                     'Showing $showingStart-$showingEnd of $totalStudents students',
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontWeight: FontWeight.w900, color: Color(0xFF334155), fontSize: 11.0),
+                    style: const TextStyle(fontWeight: FontWeight.w900, color: Color(0xFF334155), fontSize: _kTableFontSize),
                   ),
                 ),
               ],
@@ -1228,7 +1244,7 @@ class _GradesCheckerPageState extends State<GradesCheckerPage> {
     final pageTools = Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Text('Showing $showingStart-$showingEnd of $totalStudents students', style: const TextStyle(fontWeight: FontWeight.w900, color: Color(0xFF334155), fontSize: 11.3)),
+        Text('Showing $showingStart-$showingEnd of $totalStudents students', style: const TextStyle(fontWeight: FontWeight.w900, color: Color(0xFF334155), fontSize: _kTableFontSize)),
         SizedBox(width: _s(10)),
         _buildRowsPerPageSelector(),
         SizedBox(width: _s(8)),
@@ -1251,8 +1267,19 @@ class _GradesCheckerPageState extends State<GradesCheckerPage> {
   }
 
   Widget _buildRowsPerPageSelector({bool compact = false}) {
-    const labelStyle = TextStyle(color: Color(0xFF64748B), fontWeight: FontWeight.w900, fontSize: 11.0, height: 1.0);
-    const valueStyle = TextStyle(color: Color(0xFF334155), fontWeight: FontWeight.w800, fontSize: 11.0, height: 1.0);
+    const labelStyle = TextStyle(
+      color: Color(0xFF64748B),
+      fontWeight: FontWeight.w900,
+      fontSize: _kTableFontSize,
+      height: 1.0,
+    );
+    const valueStyle = TextStyle(
+      color: Color(0xFF334155),
+      fontWeight: FontWeight.w800,
+      fontSize: _kTableFontSize,
+      height: 1.0,
+    );
+
     return SizedBox(
       height: 34,
       child: Row(
@@ -1261,35 +1288,41 @@ class _GradesCheckerPageState extends State<GradesCheckerPage> {
         children: [
           if (!compact) const Text('Rows/page', style: labelStyle),
           if (!compact) SizedBox(width: _s(6)),
-          SizedBox(
+          Container(
             width: 68,
             height: 34,
-            child: DropdownButtonFormField<int>(
-              value: _pageSize,
-              isDense: true,
-              isExpanded: true,
-              iconSize: 14,
-              style: valueStyle,
-              decoration: InputDecoration(
-                contentPadding: EdgeInsets.symmetric(horizontal: _s(8), vertical: 0),
+            alignment: Alignment.center,
+            padding: EdgeInsets.symmetric(horizontal: _s(7)),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(_s(10)),
+              border: Border.all(color: const Color(0xFFD9E2F0)),
+            ),
+            child: DropdownButtonHideUnderline(
+              child: DropdownButton<int>(
+                value: _pageSize,
+                isExpanded: true,
                 isDense: true,
+                iconSize: 14,
+                style: valueStyle,
+                alignment: AlignmentDirectional.center,
+                selectedItemBuilder: (context) => const [
+                  Center(child: Text('50', style: valueStyle, textAlign: TextAlign.center)),
+                  Center(child: Text('100', style: valueStyle, textAlign: TextAlign.center)),
+                  Center(child: Text('150', style: valueStyle, textAlign: TextAlign.center)),
+                  Center(child: Text('250', style: valueStyle, textAlign: TextAlign.center)),
+                ],
+                items: const [
+                  DropdownMenuItem(value: 50, alignment: AlignmentDirectional.center, child: Text('50', style: valueStyle, textAlign: TextAlign.center)),
+                  DropdownMenuItem(value: 100, alignment: AlignmentDirectional.center, child: Text('100', style: valueStyle, textAlign: TextAlign.center)),
+                  DropdownMenuItem(value: 150, alignment: AlignmentDirectional.center, child: Text('150', style: valueStyle, textAlign: TextAlign.center)),
+                  DropdownMenuItem(value: 250, alignment: AlignmentDirectional.center, child: Text('250', style: valueStyle, textAlign: TextAlign.center)),
+                ],
+                onChanged: (value) => setState(() {
+                  _pageSize = value ?? 50;
+                  _pageIndex = 0;
+                }),
               ),
-              selectedItemBuilder: (context) => const [
-                Center(child: Text('50', style: valueStyle, textAlign: TextAlign.center)),
-                Center(child: Text('100', style: valueStyle, textAlign: TextAlign.center)),
-                Center(child: Text('150', style: valueStyle, textAlign: TextAlign.center)),
-                Center(child: Text('250', style: valueStyle, textAlign: TextAlign.center)),
-              ],
-              items: const [
-                DropdownMenuItem(value: 50, child: Center(child: Text('50', style: valueStyle, textAlign: TextAlign.center))),
-                DropdownMenuItem(value: 100, child: Center(child: Text('100', style: valueStyle, textAlign: TextAlign.center))),
-                DropdownMenuItem(value: 150, child: Center(child: Text('150', style: valueStyle, textAlign: TextAlign.center))),
-                DropdownMenuItem(value: 250, child: Center(child: Text('250', style: valueStyle, textAlign: TextAlign.center))),
-              ],
-              onChanged: (value) => setState(() {
-                _pageSize = value ?? 50;
-                _pageIndex = 0;
-              }),
             ),
           ),
         ],
@@ -1325,9 +1358,9 @@ class _GradesCheckerPageState extends State<GradesCheckerPage> {
               child: const Icon(Icons.upload_file_rounded, size: 34, color: Color(0xFF2563EB)),
             ),
             SizedBox(height: _s(9)),
-            const Text('No Excel rows loaded yet', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900)),
+            const Text('No Excel rows loaded yet', style: TextStyle(fontSize: _kHeaderFontSize, fontWeight: FontWeight.w900)),
             SizedBox(height: _s(4)),
-            const Text('Upload the UNO promotional list to preview and check grades.', style: TextStyle(color: Color(0xFF64748B), fontSize: 12)),
+            const Text('Upload the UNO promotional list to preview and check grades.', style: TextStyle(color: Color(0xFF64748B), fontSize: _kBodyFontSize)),
           ],
         ),
       );
@@ -1380,7 +1413,7 @@ class _GradesCheckerPageState extends State<GradesCheckerPage> {
               children: [
                 const Icon(Icons.swap_horiz_rounded, size: 16, color: Color(0xFF2563EB)),
                 SizedBox(width: _s(6)),
-                const Text('Horizontal', style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w900, color: Color(0xFF334155))),
+                const Text('Horizontal', style: TextStyle(fontSize: _kTableFontSize, fontWeight: FontWeight.w900, color: Color(0xFF334155))),
                 SizedBox(width: _s(8)),
                 IconButton(
                   tooltip: 'Scroll left',
@@ -1541,7 +1574,7 @@ class _StudentGradeTable extends StatelessWidget {
       height: _s(34),
       alignment: Alignment.centerLeft,
       padding: EdgeInsets.symmetric(horizontal: _s(8)),
-      child: Text(label, style: const TextStyle(fontWeight: FontWeight.w900, color: Color(0xFF334155), fontSize: 12)),
+      child: Text(label, style: const TextStyle(fontWeight: FontWeight.w900, color: Color(0xFF334155), fontSize: _kBodyFontSize)),
     );
   }
 
@@ -1559,9 +1592,9 @@ class _StudentGradeTable extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(group.studentName, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 11.5)),
+                Text(group.studentName, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: _kTableFontSize)),
                 SizedBox(height: _s(3)),
-                Text('ID: ${group.studentId.isEmpty ? 'N/A' : group.studentId}', style: const TextStyle(color: Color(0xFF64748B), fontSize: 9, fontWeight: FontWeight.w800)),
+                Text('ID: ${group.studentId.isEmpty ? 'N/A' : group.studentId}', style: const TextStyle(color: Color(0xFF64748B), fontSize: _kTableFontSize, fontWeight: FontWeight.w800)),
                 SizedBox(height: _s(4)),
                 Wrap(
                   spacing: _s(5),
@@ -1589,13 +1622,13 @@ class _StudentGradeTable extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Course', style: TextStyle(fontSize: 8.5, color: Color(0xFF94A3B8), fontWeight: FontWeight.w900)),
+          const Text('Course', style: TextStyle(fontSize: _kTableFontSize, color: Color(0xFF94A3B8), fontWeight: FontWeight.w900)),
           SizedBox(height: _s(2)),
-          Text(group.course.isEmpty ? '-' : group.course, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 11.5)),
+          Text(group.course.isEmpty ? '-' : group.course, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: _kTableFontSize)),
           SizedBox(height: _s(8)),
-          const Text('Year', style: TextStyle(fontSize: 8.5, color: Color(0xFF94A3B8), fontWeight: FontWeight.w900)),
+          const Text('Year', style: TextStyle(fontSize: _kTableFontSize, color: Color(0xFF94A3B8), fontWeight: FontWeight.w900)),
           SizedBox(height: _s(2)),
-          Text(group.yearLevel.isEmpty ? '-' : group.yearLevel, style: const TextStyle(fontWeight: FontWeight.w800, color: Color(0xFF475569), fontSize: 10.5)),
+          Text(group.yearLevel.isEmpty ? '-' : group.yearLevel, style: const TextStyle(fontWeight: FontWeight.w800, color: Color(0xFF475569), fontSize: _kTableFontSize)),
         ],
       ),
     );
@@ -1635,7 +1668,7 @@ class _StudentGradeTable extends StatelessWidget {
                     children: [
                       Container(width: _s(6.5), height: _s(6.5), decoration: BoxDecoration(color: visual.color, shape: BoxShape.circle)),
                       SizedBox(width: _s(5)),
-                      Expanded(child: Text(row.subjectCode, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 10.5))),
+                      Expanded(child: Text(row.subjectCode, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: _kTableFontSize))),
                       if (row.otherPeriodMatches.isNotEmpty)
                         const Icon(Icons.history_rounded, color: Color(0xFF475569), size: 12),
                       if (row.databaseMatches.length > 1)
@@ -1647,7 +1680,7 @@ class _StudentGradeTable extends StatelessWidget {
                   SizedBox(height: _s(1)),
                   _SubjectLine(label: 'U', excel: row.units, db: row.databaseCredits ?? row.subjectUnits, warn: row.unitsMatch == false),
                   SizedBox(height: _s(2)),
-                  Text(row.statusLabel, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 8.6, fontWeight: FontWeight.w900, color: visual.color)),
+                  Text(row.statusLabel, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: _kTableFontSize, fontWeight: FontWeight.w900, color: visual.color)),
                 ],
               ),
             ),
@@ -1674,7 +1707,7 @@ class _SubjectLine extends StatelessWidget {
       maxLines: 1,
       overflow: TextOverflow.ellipsis,
       text: TextSpan(
-        style: const TextStyle(fontSize: 9.2, color: Color(0xFF334155)),
+        style: const TextStyle(fontSize: _kTableFontSize, color: Color(0xFF334155)),
         children: [
           TextSpan(text: '$label: ', style: const TextStyle(fontWeight: FontWeight.w900, color: Color(0xFF64748B))),
           TextSpan(text: excelValue, style: const TextStyle(fontWeight: FontWeight.w900)),
@@ -1708,7 +1741,7 @@ class _PagerButtons extends StatelessWidget {
           padding: EdgeInsets.zero,
         ),
         SizedBox(width: _s(4)),
-        Text('Page ${totalStudents == 0 ? 0 : safePageIndex + 1} of ${totalStudents == 0 ? 0 : pageCount}', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 10.5)),
+        Text('Page ${totalStudents == 0 ? 0 : safePageIndex + 1} of ${totalStudents == 0 ? 0 : pageCount}', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: _kTableFontSize)),
         SizedBox(width: _s(4)),
         IconButton.filledTonal(
           tooltip: 'Next page',
@@ -1785,7 +1818,7 @@ class _TinyHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     return Padding(
       padding: EdgeInsets.all(_s(7)),
-      child: Text(text, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 10.5)),
+      child: Text(text, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: _kTableFontSize)),
     );
   }
 }
@@ -1798,7 +1831,7 @@ class _TinyCell extends StatelessWidget {
   Widget build(BuildContext context) {
     return Padding(
       padding: EdgeInsets.all(_s(7)),
-      child: Text(text.isEmpty ? '-' : text, style: const TextStyle(fontSize: 10.5)),
+      child: Text(text.isEmpty ? '-' : text, style: const TextStyle(fontSize: _kTableFontSize)),
     );
   }
 }
@@ -1818,8 +1851,8 @@ class _DetailPill extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text('$label: ', style: TextStyle(fontWeight: FontWeight.w900, color: color, fontSize: 10.5)),
-          Text(value, style: const TextStyle(fontWeight: FontWeight.w900, color: Color(0xFF0F172A), fontSize: 10.5)),
+          Text('$label: ', style: TextStyle(fontWeight: FontWeight.w900, color: color, fontSize: _kTableFontSize)),
+          Text(value, style: const TextStyle(fontWeight: FontWeight.w900, color: Color(0xFF0F172A), fontSize: _kTableFontSize)),
         ],
       ),
     );
@@ -1851,7 +1884,7 @@ class _InterpretationCard extends StatelessWidget {
             ],
           ),
           SizedBox(height: _s(8)),
-          Text(text, style: const TextStyle(color: Color(0xFF1E3A8A), height: 1.35, fontSize: 12)),
+          Text(text, style: const TextStyle(color: Color(0xFF1E3A8A), height: 1.35, fontSize: _kBodyFontSize)),
         ],
       ),
     );
@@ -1908,9 +1941,9 @@ class _MetricCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Color(0xFF64748B), fontSize: 10.5)),
+                Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Color(0xFF64748B), fontSize: _kTableFontSize)),
                 SizedBox(height: _s(1)),
-                Text(value, style: const TextStyle(fontSize: 15.5, fontWeight: FontWeight.w900)),
+                Text(value, style: const TextStyle(fontSize: _kHeaderFontSize, fontWeight: FontWeight.w900)),
               ],
             ),
           ),
@@ -1936,7 +1969,7 @@ class _LegendItem extends StatelessWidget {
         children: [
           Container(width: _s(9), height: _s(9), decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
           SizedBox(width: _s(6)),
-          Text(label, style: const TextStyle(fontSize: 10.8, fontWeight: FontWeight.w900, color: Color(0xFF334155))),
+          Text(label, style: const TextStyle(fontSize: _kTableFontSize, fontWeight: FontWeight.w900, color: Color(0xFF334155))),
         ],
       ),
     );
@@ -1953,7 +1986,7 @@ class _SmallBadge extends StatelessWidget {
     return Container(
       padding: EdgeInsets.symmetric(horizontal: _s(6), vertical: _s(3)),
       decoration: BoxDecoration(color: const Color(0xFFF8FAFC), borderRadius: BorderRadius.circular(99), border: Border.all(color: const Color(0xFFE2E8F0))),
-      child: Text(label, style: const TextStyle(fontSize: 8.8, fontWeight: FontWeight.w900, color: Color(0xFF475569))),
+      child: Text(label, style: const TextStyle(fontSize: _kTableFontSize, fontWeight: FontWeight.w900, color: Color(0xFF475569))),
     );
   }
 }
@@ -1978,7 +2011,7 @@ class _SoftPill extends StatelessWidget {
         children: [
           Icon(icon, size: 15, color: const Color(0xFF2563EB)),
           SizedBox(width: _s(6)),
-          Flexible(child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w900, color: Color(0xFF334155), fontSize: 10.7))),
+          Flexible(child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w900, color: Color(0xFF334155), fontSize: _kTableFontSize))),
         ],
       ),
     );

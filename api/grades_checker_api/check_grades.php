@@ -25,6 +25,20 @@ function placeholders(int $count): string
 }
 
 
+function period_payload_label(array $grade): string
+{
+    $name = trim((string) ($grade['period_name'] ?? ''));
+    $semester = trim((string) ($grade['period_semester'] ?? ''));
+
+    if ($name !== '' && $semester !== '') {
+        return $name . ' - ' . $semester;
+    }
+    if ($name !== '') return $name;
+    if ($semester !== '') return $semester;
+    return trim((string) ($grade['period_label'] ?? ''));
+}
+
+
 function grade_records_payload(array $grades): array
 {
     $out = [];
@@ -40,7 +54,7 @@ function grade_records_payload(array $grades): array
             'grade_status' => $grade['sg_grade_status'] ?? '',
             'class_id' => $grade['sg_class_id'] ?? '',
             'period_id' => $grade['sg_period_id'] ?? '',
-            'period_label' => trim((string) ($grade['period_label'] ?? '')),
+            'period_label' => period_payload_label($grade),
         ];
     }
     return $out;
@@ -201,7 +215,7 @@ try {
         $sql = "SELECT sg.sg_id, sg.sg_student_id, sg.sg_subject_id, sg.sg_period_id,
                        sg.sg_grade, sg.sg_credits, sg.sg_grade_status, sg.sg_course_id, sg.sg_class_id,
                        co.course_code, subj.subject_units, subj.subject_description,
-                       CONCAT(COALESCE(p.period_name, ''), ' - ', COALESCE(p.period_semester, '')) AS period_label
+                       p.period_name, p.period_semester
                 FROM tbl_students_grades sg
                 LEFT JOIN tbl_course co ON co.course_id = sg.sg_course_id
                 LEFT JOIN tbl_subject subj ON subj.subject_id = sg.sg_subject_id
@@ -224,7 +238,7 @@ try {
         $sql = "SELECT sg.sg_id, sg.sg_student_id, sg.sg_subject_id, sg.sg_period_id,
                        sg.sg_grade, sg.sg_credits, sg.sg_grade_status, sg.sg_course_id, sg.sg_class_id,
                        co.course_code, subj.subject_units, subj.subject_description,
-                       CONCAT(COALESCE(p.period_name, ''), ' - ', COALESCE(p.period_semester, '')) AS period_label
+                       p.period_name, p.period_semester
                 FROM tbl_students_grades sg
                 LEFT JOIN tbl_course co ON co.course_id = sg.sg_course_id
                 LEFT JOIN tbl_subject subj ON subj.subject_id = sg.sg_subject_id
