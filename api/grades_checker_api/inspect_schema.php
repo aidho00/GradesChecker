@@ -3,25 +3,32 @@ require_once __DIR__ . '/bootstrap.php';
 
 try {
     $pdo = db();
-    $tables = ['tbl_period', 'tbl_student', 'tbl_course', 'tbl_students_grades', 'tbl_subject'];
-    $schema = [];
-
     $stmt = $pdo->prepare(
-        'SELECT TABLE_NAME, COLUMN_NAME, COLUMN_TYPE, IS_NULLABLE, COLUMN_KEY
+        'SELECT TABLE_NAME, COLUMN_NAME, DATA_TYPE, IS_NULLABLE, COLUMN_KEY
          FROM INFORMATION_SCHEMA.COLUMNS
-         WHERE TABLE_SCHEMA = :schema AND TABLE_NAME = :table
-         ORDER BY ORDINAL_POSITION'
+         WHERE TABLE_SCHEMA = :db
+         ORDER BY TABLE_NAME, ORDINAL_POSITION'
     );
+    $stmt->execute(['db' => DB_NAME]);
 
-    foreach ($tables as $table) {
-        $stmt->execute(['schema' => DB_NAME, 'table' => $table]);
-        $schema[$table] = $stmt->fetchAll();
+    $tables = [];
+    foreach ($stmt->fetchAll() as $column) {
+        $tableName = $column['TABLE_NAME'];
+        if (!isset($tables[$tableName])) {
+            $tables[$tableName] = [];
+        }
+        $tables[$tableName][] = [
+            'name' => $column['COLUMN_NAME'],
+            'type' => $column['DATA_TYPE'],
+            'nullable' => $column['IS_NULLABLE'],
+            'key' => $column['COLUMN_KEY'],
+        ];
     }
 
     json_response([
         'ok' => true,
         'database' => DB_NAME,
-        'schema' => $schema,
+        'tables' => $tables,
     ]);
 } catch (Throwable $e) {
     json_response([

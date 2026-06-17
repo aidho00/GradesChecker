@@ -1,17 +1,29 @@
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:excel/excel.dart';
 
 import '../models/grade_row.dart';
 
+typedef ExcelParseProgress = void Function(String phase, int processed, int total);
+
 class HemisExcelParser {
-  static List<GradeRow> parsePromotionalList({
+  static Future<List<GradeRow>> parsePromotionalListAsync({
     required Uint8List bytes,
     required String schoolYear,
     required String semester,
     required String periodId,
-  }) {
+    ExcelParseProgress? onProgress,
+  }) async {
+    onProgress?.call('Preparing workbook reader', 0, 0);
+    await Future<void>.delayed(Duration.zero);
+
+    // The excel package decodes the workbook synchronously. Keep this single step
+    // small in the UI and make the row parsing/checking parts chunked below.
+    onProgress?.call('Decoding workbook', 0, 0);
     final excel = Excel.decodeBytes(bytes);
+    await Future<void>.delayed(Duration.zero);
+
     if (excel.tables.isEmpty) {
       throw const FormatException('The Excel file has no worksheets.');
     }
@@ -22,62 +34,88 @@ class HemisExcelParser {
       throw const FormatException('The first worksheet is empty.');
     }
 
-    final headerRow = sheet.rows.first;
+    final rows = sheet.rows;
+    final headerRow = rows.first;
     final headers = <String, int>{};
     for (var i = 0; i < headerRow.length; i++) {
       final key = _normalizeHeader(_cellText(headerRow[i]));
       if (key.isNotEmpty) headers[key] = i;
     }
 
-    String fromRow(List<Data?> row, String header) {
-      final index = headers[_normalizeHeader(header)];
-      if (index == null || index >= row.length) return '';
-      return _cellText(row[index]);
+    final idIndex = headers[_normalizeHeader('ID')];
+    final lastNameIndex = headers[_normalizeHeader('LAST NAME')];
+    final firstNameIndex = headers[_normalizeHeader('FIRST NAME')];
+    final middleNameIndex = headers[_normalizeHeader('MIDDLE NAME')];
+    final courseIndex = headers[_normalizeHeader('COURSE')];
+    final yearLevelIndex = headers[_normalizeHeader('YEARLEVEL')];
+
+    final subjectSlots = <_SubjectSlot>[];
+    for (var subjectNo = 1; subjectNo <= 10; subjectNo++) {
+      subjectSlots.add(
+        _SubjectSlot(
+          subjectNo: subjectNo,
+          subjectIndex: headers[_normalizeHeader('SUBJECT$subjectNo')],
+          unitsIndex: headers[_normalizeHeader('UNITS$subjectNo')],
+          gradeIndex: headers[_normalizeHeader('GRADE$subjectNo')],
+        ),
+      );
     }
 
     final parsed = <GradeRow>[];
+    final totalExcelRows = rows.length > 1 ? rows.length - 1 : 0;
+    onProgress?.call('Parsing Excel rows', 0, totalExcelRows);
 
-    for (var rowIndex = 1; rowIndex < sheet.rows.length; rowIndex++) {
-      final row = sheet.rows[rowIndex];
-      final studentId = fromRow(row, 'ID');
-      final lastName = fromRow(row, 'LAST NAME');
-      final firstName = fromRow(row, 'FIRST NAME');
+    for (var rowIndex = 1; rowIndex < rows.length; rowIndex++) {
+      final row = rows[rowIndex];
+      final studentId = _fromIndex(row, idIndex);
+      if (studentId.trim().isNotEmpty) {
+        final lastName = _fromIndex(row, lastNameIndex);
+        final firstName = _fromIndex(row, firstNameIndex);
+        final middleName = _fromIndex(row, middleNameIndex);
+        final course = _fromIndex(row, courseIndex);
+        final yearLevel = _fromIndex(row, yearLevelIndex);
 
-      if (studentId.trim().isEmpty &&
-          lastName.trim().isEmpty &&
-          firstName.trim().isEmpty) {
-        continue;
+        for (final slot in subjectSlots) {
+          final subject = _fromIndex(row, slot.subjectIndex);
+          if (subject.trim().isEmpty) continue;
+
+          parsed.add(
+            GradeRow(
+              excelRowNumber: rowIndex + 1,
+              subjectNo: slot.subjectNo,
+              studentId: studentId,
+              lastName: lastName,
+              firstName: firstName,
+              middleName: middleName,
+              course: course,
+              yearLevel: yearLevel,
+              subjectCode: subject,
+              units: _fromIndex(row, slot.unitsIndex),
+              excelGrade: _fromIndex(row, slot.gradeIndex),
+              schoolYear: schoolYear,
+              semester: semester,
+              periodId: periodId,
+            ),
+          );
+        }
       }
 
-      final middleName = fromRow(row, 'MIDDLE NAME');
-      final course = fromRow(row, 'COURSE');
-      final yearLevel = fromRow(row, 'YEARLEVEL');
-
-      for (var subjectNo = 1; subjectNo <= 10; subjectNo++) {
-        final subject = fromRow(row, 'SUBJECT$subjectNo');
-        if (subject.trim().isEmpty) continue;
-
-        parsed.add(
-          GradeRow(
-            excelRowNumber: rowIndex + 1,
-            studentId: studentId,
-            lastName: lastName,
-            firstName: firstName,
-            middleName: middleName,
-            course: course,
-            yearLevel: yearLevel,
-            subjectCode: subject,
-            units: fromRow(row, 'UNITS$subjectNo'),
-            excelGrade: fromRow(row, 'GRADE$subjectNo'),
-            schoolYear: schoolYear,
-            semester: semester,
-            periodId: periodId,
-          ),
-        );
+      // Updating every row is slower and can cause UI jank on large files.
+      // Every 100 rows keeps the browser responsive without too many rebuilds.
+      final processed = rowIndex;
+      if (processed % 100 == 0 || rowIndex == rows.length - 1) {
+        onProgress?.call('Parsing Excel rows', processed, totalExcelRows);
+        await Future<void>.delayed(Duration.zero);
       }
     }
 
+    onProgress?.call('Parsed subject-grade records', parsed.length, parsed.length);
     return parsed;
+  }
+
+  static String _fromIndex(List<Data?> row, int? index) {
+    if (index == null || index < 0 || index >= row.length) return '';
+    return _cellText(row[index]);
   }
 
   static String _normalizeHeader(String value) {
@@ -97,7 +135,7 @@ class HemisExcelParser {
         final dynamic text = inner.text;
         if (text != null) return _clean(text.toString());
       } catch (_) {
-        // Numeric values usually do not have a text property.
+        // Most numeric values do not have a text property.
       }
 
       return _clean(inner.toString());
@@ -113,4 +151,18 @@ class HemisExcelParser {
     }
     return cleaned;
   }
+}
+
+class _SubjectSlot {
+  const _SubjectSlot({
+    required this.subjectNo,
+    required this.subjectIndex,
+    required this.unitsIndex,
+    required this.gradeIndex,
+  });
+
+  final int subjectNo;
+  final int? subjectIndex;
+  final int? unitsIndex;
+  final int? gradeIndex;
 }

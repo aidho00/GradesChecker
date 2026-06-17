@@ -1,17 +1,38 @@
 # Observed Excel Format
 
-Workbook: `HEMIS - Promotional List - 2019-2020-1ST SEM UNO.xlsx`
+Uploaded file inspected:
 
-Observed headers:
+`HEMIS - Promotional List - 2019-2020-1ST SEM UNO.xlsx`
 
-```text
-ID, LAST NAME, FIRST NAME, MIDDLE NAME, COURSE, YEARLEVEL, BIRTHDATE,
-SUBJECT1, UNITS1, GRADE1,
-SUBJECT2, UNITS2, GRADE2,
-...
-SUBJECT10, UNITS10, GRADE10,
-REMARKS, TOTALUNITS, TOTALSUBJECT, GRADESTATUS
-```
+Worksheet:
 
-The Flutter parser expands each student row into multiple subject-grade rows.
-For example, a student with 9 subjects becomes 9 rows to check against MySQL.
+`Sheet1`
+
+Used range:
+
+`A1:AS4046`
+
+Header row fields include:
+
+- `ID`
+- `LAST NAME`
+- `FIRST NAME`
+- `MIDDLE NAME`
+- `EXTENSION`
+- `SEX`
+- `NATIONALITY`
+- `COURSE`
+- `MAJOR`
+- `YEARLEVEL`
+- `BIRTHDATE`
+- repeated subject grade groups:
+  - `SUBJECT1`, `UNITS1`, `GRADE1`
+  - ...
+  - `SUBJECT10`, `UNITS10`, `GRADE10`
+- `REMARKS`
+- `TOTALUNITS`
+- `TOTALSUBJECT`
+- `GRADESTATUS`
+
+The Flutter parser converts each non-empty subject group into one grade-check row.
+Example: one student row with 6 subjects becomes 6 grade-check rows.

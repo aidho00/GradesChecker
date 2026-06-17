@@ -1,87 +1,55 @@
-# Grades Checker Starter Project
+# Grades Checker Starter
 
-This is a starter web-based system for cross-checking a HEMIS promotional-list Excel file against your `cfcissmsdb` MySQL database.
+Flutter Web + PHP API starter for checking HEMIS promotional-list Excel grades against MySQL.
 
-## Yes, Flutter + MySQL is possible
+## Current UI version
 
-Use this architecture:
+This build is optimized for web/desktop use.
 
-```text
-Flutter Web UI
-  -> reads .xlsx in the browser
-  -> converts SUBJECT1/UNITS1/GRADE1 ... SUBJECT10/UNITS10/GRADE10 into subject-grade rows
-  -> sends rows to PHP API
-  -> PHP API checks MySQL using cfcissmsdb tables
-  -> Flutter marks Existing, Missing, Grade differs, or Units differ
-```
+### Included changes
 
-Direct Flutter Web to MySQL is not recommended because it exposes database credentials in the browser. PHP keeps the MySQL credentials on the local/server side.
+- One full table row per student.
+- Columns for Subject 1 to Subject 10.
+- Color legend for status.
+- Full-width data workspace below the setup controls.
+- Page scrolls naturally from top to bottom; the results area is no longer trapped in a limited viewport.
+- Connection/API settings are hidden inside a modal.
+- Academic period selector shows `period_name - period_semester` while hiding the internal period ID.
+- Faster parsing/checking behavior:
+  - Excel rows are parsed with cached column indexes.
+  - UI progress is throttled to avoid excessive rebuilds.
+  - Database checking uses batches of 500 records per request.
+  - PHP checks each batch using grouped SQL lookups instead of one query per row.
 
-## Folders
+## Folder placement
 
-```text
-flutter_grades_checker/        Flutter Web app
-api/grades_checker_api/        PHP API for WAMP or XAMPP
-sql/                           optional sample API request
-README.md                      setup guide
-```
-
-## Target database tables
-
-The checker is focused on:
-
-```text
-tbl_period
-tbl_student
-tbl_course
-tbl_students_grades
-tbl_subject
-```
-
-Default matching:
-
-```text
-Student: Excel ID OR FIRST NAME + LAST NAME
-Subject: Excel SUBJECT# = tbl_subject.subject_code
-Period: Period ID if supplied, otherwise Academic Year + Semester
-Grade record: tbl_students_grades.sg_student_id + sg_subject_id + sg_period_id
-```
-
-It also compares units:
-
-```text
-Excel UNITS# vs tbl_students_grades.sg_credits
-Excel UNITS# vs tbl_subject.subject_units
-```
-
-## Setup for WAMP or XAMPP
-
-1. Import `cfcissmsdb.sql` into MySQL through phpMyAdmin.
-2. Copy this folder:
+Copy this folder:
 
 ```text
 api/grades_checker_api
 ```
 
-For WAMP, paste it into:
-
-```text
-C:\wamp64\www\grades_checker_api
-```
-
-For XAMPP, paste it into:
+To XAMPP:
 
 ```text
 C:\xampp\htdocs\grades_checker_api
 ```
 
-3. Edit:
+Or WAMP:
 
 ```text
-grades_checker_api/config.php
+C:\wamp64\www\grades_checker_api
 ```
 
-Common local defaults:
+## Database config
+
+Edit:
+
+```text
+api/grades_checker_api/config.php
+```
+
+Typical local settings:
 
 ```php
 const DB_HOST = '127.0.0.1';
@@ -91,11 +59,9 @@ const DB_USER = 'root';
 const DB_PASS = '';
 ```
 
-If your XAMPP/WAMP MySQL has a password or uses a different port, change it there only.
+## Test API
 
-## Test API URLs
-
-Open these in the browser:
+Open in browser:
 
 ```text
 http://localhost/grades_checker_api/ping.php
@@ -103,65 +69,27 @@ http://localhost/grades_checker_api/periods.php
 http://localhost/grades_checker_api/inspect_schema.php
 ```
 
-If Apache uses another port:
-
-```text
-http://localhost:8080/grades_checker_api/ping.php
-```
-
 ## Run Flutter Web
 
-From the Flutter project folder:
+From:
+
+```text
+flutter_grades_checker
+```
+
+Run:
 
 ```bash
-cd flutter_grades_checker
 flutter pub get
 flutter run -d chrome
 ```
 
-Or fixed port:
+Or fixed web-server port:
 
 ```bash
 flutter run -d web-server --web-port 53902
 ```
 
-## Using the app
+## Notes on very large Excel files
 
-1. Confirm the API endpoint is correct, usually:
-
-```text
-http://localhost/grades_checker_api/check_grades.php
-```
-
-2. Enter Academic Year and Semester, for example:
-
-```text
-Academic Year: 2019-2020
-Semester: 1ST SEM
-```
-
-3. If period text matching is not exact, open `periods.php`, copy the correct `period_id`, and paste it in the Flutter `Period ID` field.
-4. Upload `HEMIS - Promotional List - 2019-2020-1ST SEM UNO.xlsx`.
-5. Click **Check Database**.
-
-## Student matching mode
-
-In `config.php`:
-
-```php
-const STUDENT_MATCH_MODE = 'id_or_name';
-```
-
-Options:
-
-```text
-id_or_name  = safest default; checks Excel ID first, then first name + last name
-name_only   = ignores Excel ID and checks first name + last name only
-id_only     = checks Excel ID only
-```
-
-## Notes
-
-- This starter does not insert or update grades. It only cross-checks and displays results.
-- If multiple students share the same first and last name, use `id_or_name` or `id_only`.
-- If `period_id` is supplied, the app ignores academic-year/semester text and uses the exact period ID.
+The app now batches database checking and throttles UI updates. The only unavoidable pause can still happen while the `excel` package decodes the workbook, because that package reads the XLSX workbook synchronously in Flutter Web. After decoding, parsing and database checking are chunked so the browser can repaint progress.

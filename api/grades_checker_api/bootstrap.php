@@ -20,14 +20,7 @@ function json_response(array $payload, int $statusCode = 200): void
 
 function db(): PDO
 {
-    $dsn = sprintf(
-        'mysql:host=%s;port=%s;dbname=%s;charset=%s',
-        DB_HOST,
-        DB_PORT,
-        DB_NAME,
-        DB_CHARSET
-    );
-
+    $dsn = sprintf('mysql:host=%s;port=%s;dbname=%s;charset=%s', DB_HOST, DB_PORT, DB_NAME, DB_CHARSET);
     return new PDO($dsn, DB_USER, DB_PASS, [
         PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
         PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
@@ -35,7 +28,15 @@ function db(): PDO
     ]);
 }
 
-function normalize_text(mixed $value): string
+function quote_identifier(string $identifier): string
+{
+    if (!preg_match('/^[A-Za-z0-9_]+$/', $identifier)) {
+        throw new InvalidArgumentException("Invalid SQL identifier: {$identifier}");
+    }
+    return '`' . $identifier . '`';
+}
+
+function normalize_value(mixed $value): string
 {
     $text = trim((string) $value);
     $text = preg_replace('/\s+/', ' ', $text) ?? $text;
@@ -49,25 +50,5 @@ function normalize_grade(mixed $value): string
     if (is_numeric($text)) {
         return rtrim(rtrim(number_format((float) $text, 4, '.', ''), '0'), '.');
     }
-    return normalize_text($text);
-}
-
-function normalize_units(mixed $value): string
-{
-    $text = trim((string) $value);
-    if ($text === '') return '';
-    if (is_numeric($text)) {
-        return rtrim(rtrim(number_format((float) $text, 4, '.', ''), '0'), '.');
-    }
-    return normalize_text($text);
-}
-
-function sql_norm(string $columnExpression): string
-{
-    return "UPPER(TRIM($columnExpression))";
-}
-
-function bool_or_null(bool $condition, bool $enabled = true): ?bool
-{
-    return $enabled ? $condition : null;
+    return normalize_value($text);
 }

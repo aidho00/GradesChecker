@@ -5,270 +5,38 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     json_response(['ok' => false, 'message' => 'POST request required.'], 405);
 }
 
-function find_subject(PDO $pdo, array $row): ?array
+function clean_key(mixed $value): string
 {
-    static $stmt = null;
-    if ($stmt === null) {
-        $stmt = $pdo->prepare(
-            'SELECT subject_id, subject_code, subject_description, subject_units
-             FROM tbl_subject
-             WHERE ' . sql_norm('subject_code') . ' = :subject_code
-             LIMIT 1'
-        );
-    }
-    $stmt->execute(['subject_code' => normalize_text($row['subject_code'] ?? '')]);
-    $subject = $stmt->fetch();
-    return $subject ?: null;
+    return normalize_value($value);
 }
 
-function find_student(PDO $pdo, array $row): ?array
+function first_non_empty(array $values): string
 {
-    $studentId = trim((string)($row['student_id'] ?? ''));
-    $firstName = normalize_text($row['first_name'] ?? '');
-    $lastName = normalize_text($row['last_name'] ?? '');
-
-    if (STUDENT_MATCH_MODE !== 'name_only' && $studentId !== '') {
-        static $byId = null;
-        if ($byId === null) {
-            $byId = $pdo->prepare(
-                'SELECT s.s_id_no, s.s_fn, s.s_mn, s.s_ln, s.s_course_id,
-                        c.course_code, c.course_name
-                 FROM tbl_student s
-                 LEFT JOIN tbl_course c ON c.course_id = s.s_course_id
-                 WHERE s.s_id_no = :student_id
-                 LIMIT 1'
-            );
-        }
-        $byId->execute(['student_id' => $studentId]);
-        $student = $byId->fetch();
-        if ($student) return $student;
+    foreach ($values as $value) {
+        $text = trim((string) $value);
+        if ($text !== '') return $text;
     }
-
-    if (STUDENT_MATCH_MODE !== 'id_only' && $firstName !== '' && $lastName !== '') {
-        static $byName = null;
-        if ($byName === null) {
-            $byName = $pdo->prepare(
-                'SELECT s.s_id_no, s.s_fn, s.s_mn, s.s_ln, s.s_course_id,
-                        c.course_code, c.course_name
-                 FROM tbl_student s
-                 LEFT JOIN tbl_course c ON c.course_id = s.s_course_id
-                 WHERE ' . sql_norm('s.s_fn') . ' = :first_name
-                   AND ' . sql_norm('s.s_ln') . ' = :last_name
-                 LIMIT 2'
-            );
-        }
-        $byName->execute(['first_name' => $firstName, 'last_name' => $lastName]);
-        $students = $byName->fetchAll();
-        if (count($students) === 1) return $students[0];
-        if (count($students) > 1) {
-            $students[0]['_ambiguous'] = true;
-            return $students[0];
-        }
-    }
-
-    return null;
+    return '';
 }
 
-function period_where_and_params(array $row): array
+function placeholders(int $count): string
 {
-    $periodId = trim((string)($row['period_id'] ?? ''));
-    $academicYear = normalize_text($row['school_year'] ?? '');
-    $semester = normalize_text($row['semester'] ?? '');
-    $combinedA = normalize_text($academicYear . '-' . $semester);
-    $combinedB = normalize_text($academicYear . ' ' . $semester);
-
-    if ($periodId !== '') {
-        return [
-            ' AND g.sg_period_id = :period_id ',
-            ['period_id' => $periodId],
-            'Period ID: ' . $periodId,
-        ];
-    }
-
-    if (!ALLOW_PERIOD_TEXT_FALLBACK || ($academicYear === '' && $semester === '')) {
-        return ['', [], 'No period filter'];
-    }
-
-    return [
-        ' AND (
-              (' . sql_norm('p.period_name') . ' = :academic_year AND ' . sql_norm('p.period_semester') . ' = :semester)
-              OR ' . sql_norm("CONCAT(p.period_name, '-', p.period_semester)") . ' = :combined_a
-              OR ' . sql_norm("CONCAT(p.period_name, ' ', p.period_semester)") . ' = :combined_b
-          ) ',
-        [
-            'academic_year' => $academicYear,
-            'semester' => $semester,
-            'combined_a' => $combinedA,
-            'combined_b' => $combinedB,
-        ],
-        'Period text: ' . trim(($row['school_year'] ?? '') . ' ' . ($row['semester'] ?? '')),
-    ];
+    return implode(',', array_fill(0, $count, '?'));
 }
 
-function check_one_row(PDO $pdo, array $row): array
+function unique_non_empty(array $values): array
 {
-    $subject = find_subject($pdo, $row);
-    $student = find_student($pdo, $row);
-    $excelGrade = $row['excel_grade'] ?? '';
-    $excelUnits = $row['units'] ?? '';
-
-    if (!$student) {
-        return [
-            'exists' => false,
-            'grade_matches' => null,
-            'units_match_database' => null,
-            'units_match_subject_master' => $subject ? bool_or_null(normalize_units($excelUnits) === normalize_units($subject['subject_units'] ?? ''), $excelUnits !== '') : null,
-            'database_grade' => null,
-            'database_units' => null,
-            'subject_units' => $subject['subject_units'] ?? null,
-            'database_reference' => null,
-            'database_student_id' => null,
-            'database_subject_id' => $subject['subject_id'] ?? null,
-            'period_label' => null,
-            'message' => 'Student not found by configured match mode.',
-        ];
+    $seen = [];
+    $out = [];
+    foreach ($values as $value) {
+        $text = trim((string) $value);
+        if ($text === '') continue;
+        $key = clean_key($text);
+        if (isset($seen[$key])) continue;
+        $seen[$key] = true;
+        $out[] = $text;
     }
-
-    if (($student['_ambiguous'] ?? false) === true) {
-        return [
-            'exists' => false,
-            'grade_matches' => null,
-            'units_match_database' => null,
-            'units_match_subject_master' => $subject ? bool_or_null(normalize_units($excelUnits) === normalize_units($subject['subject_units'] ?? ''), $excelUnits !== '') : null,
-            'database_grade' => null,
-            'database_units' => null,
-            'subject_units' => $subject['subject_units'] ?? null,
-            'database_reference' => null,
-            'database_student_id' => $student['s_id_no'] ?? null,
-            'database_subject_id' => $subject['subject_id'] ?? null,
-            'period_label' => null,
-            'message' => 'Multiple students have the same first name and last name. Use Student ID or set STUDENT_MATCH_MODE=id_or_name.',
-        ];
-    }
-
-    if (!$subject) {
-        return [
-            'exists' => false,
-            'grade_matches' => null,
-            'units_match_database' => null,
-            'units_match_subject_master' => null,
-            'database_grade' => null,
-            'database_units' => null,
-            'subject_units' => null,
-            'database_reference' => null,
-            'database_student_id' => $student['s_id_no'] ?? null,
-            'database_subject_id' => null,
-            'period_label' => null,
-            'message' => 'Subject code not found in tbl_subject.',
-        ];
-    }
-
-    [$periodWhere, $periodParams] = period_where_and_params($row);
-
-    $courseWhere = '';
-    $courseParams = [];
-    if (REQUIRE_COURSE_MATCH) {
-        $courseText = normalize_text($row['course'] ?? '');
-        if ($courseText !== '') {
-            $courseWhere = ' AND (' . sql_norm('c.course_code') . ' = :course_text_code OR ' . sql_norm('c.course_name') . ' = :course_text_name) ';
-            $courseParams['course_text_code'] = $courseText;
-            $courseParams['course_text_name'] = $courseText;
-        }
-    }
-
-    $sql = '
-        SELECT
-            g.sg_id AS database_reference,
-            g.sg_student_id,
-            g.sg_subject_id,
-            g.sg_period_id,
-            g.sg_grade AS database_grade,
-            g.sg_credits AS database_units,
-            g.sg_grade_status,
-            s.s_id_no,
-            s.s_fn,
-            s.s_mn,
-            s.s_ln,
-            c.course_code,
-            c.course_name,
-            sub.subject_code,
-            sub.subject_units,
-            p.period_id,
-            CONCAT(p.period_name, "-", p.period_semester) AS period_label
-        FROM tbl_students_grades g
-        INNER JOIN tbl_student s ON s.s_id_no = g.sg_student_id
-        INNER JOIN tbl_subject sub ON sub.subject_id = g.sg_subject_id
-        INNER JOIN tbl_period p ON p.period_id = g.sg_period_id
-        LEFT JOIN tbl_course c ON c.course_id = s.s_course_id
-        WHERE g.sg_student_id = :student_id
-          AND g.sg_subject_id = :subject_id
-          ' . $periodWhere . '
-          ' . $courseWhere . '
-        ORDER BY g.sg_id DESC
-        LIMIT 5';
-
-    $stmt = $pdo->prepare($sql);
-    $params = array_merge([
-        'student_id' => $student['s_id_no'],
-        'subject_id' => $subject['subject_id'],
-    ], $periodParams, $courseParams);
-    $stmt->execute($params);
-    $matches = $stmt->fetchAll();
-
-    if (count($matches) === 0) {
-        return [
-            'exists' => false,
-            'grade_matches' => false,
-            'units_match_database' => null,
-            'units_match_subject_master' => bool_or_null(normalize_units($excelUnits) === normalize_units($subject['subject_units'] ?? ''), $excelUnits !== ''),
-            'database_grade' => null,
-            'database_units' => null,
-            'subject_units' => $subject['subject_units'] ?? null,
-            'database_reference' => null,
-            'database_student_id' => $student['s_id_no'] ?? null,
-            'database_subject_id' => $subject['subject_id'] ?? null,
-            'period_label' => null,
-            'message' => 'Student and subject exist, but no grade record found for this period.',
-        ];
-    }
-
-    $match = $matches[0];
-    $gradeMatches = null;
-    if (trim((string)$excelGrade) !== '') {
-        $gradeMatches = normalize_grade($excelGrade) === normalize_grade($match['database_grade'] ?? '');
-    }
-
-    $unitsMatchDatabase = null;
-    if (trim((string)$excelUnits) !== '') {
-        $unitsMatchDatabase = normalize_units($excelUnits) === normalize_units($match['database_units'] ?? '');
-    }
-
-    $unitsMatchSubject = null;
-    if (trim((string)$excelUnits) !== '') {
-        $unitsMatchSubject = normalize_units($excelUnits) === normalize_units($match['subject_units'] ?? '');
-    }
-
-    $messages = [];
-    if (count($matches) > 1) $messages[] = 'Multiple grade records found; latest sg_id shown.';
-    if ($gradeMatches === false) $messages[] = 'Grade differs.';
-    if ($unitsMatchDatabase === false) $messages[] = 'Units differ from tbl_students_grades.sg_credits.';
-    if ($unitsMatchSubject === false) $messages[] = 'Units differ from tbl_subject.subject_units.';
-    if (empty($messages)) $messages[] = 'Record found.';
-
-    return [
-        'exists' => true,
-        'grade_matches' => $gradeMatches,
-        'units_match_database' => $unitsMatchDatabase,
-        'units_match_subject_master' => $unitsMatchSubject,
-        'database_grade' => $match['database_grade'] ?? null,
-        'database_units' => $match['database_units'] ?? null,
-        'subject_units' => $match['subject_units'] ?? null,
-        'database_reference' => $match['database_reference'] ?? null,
-        'database_student_id' => $match['sg_student_id'] ?? null,
-        'database_subject_id' => $match['sg_subject_id'] ?? null,
-        'period_label' => $match['period_label'] ?? null,
-        'message' => implode(' ', $messages),
-    ];
+    return $out;
 }
 
 try {
@@ -277,36 +45,268 @@ try {
         json_response(['ok' => false, 'message' => 'Invalid JSON body.'], 400);
     }
 
+    $periodId = trim((string) ($input['period_id'] ?? ''));
     $rows = $input['rows'] ?? null;
     if (!is_array($rows)) {
         json_response(['ok' => false, 'message' => 'Missing rows array.'], 400);
     }
+    if ($periodId === '' && isset($rows[0]['period_id'])) {
+        $periodId = trim((string) $rows[0]['period_id']);
+    }
+    if ($periodId === '') {
+        json_response(['ok' => false, 'message' => 'Missing selected period_id.'], 400);
+    }
+
+    // Keep each request bounded. Flutter sends large workbooks in batches.
+    if (count($rows) > 500) {
+        json_response(['ok' => false, 'message' => 'Too many rows in one request. Use client-side batching of 500 rows or less.'], 413);
+    }
 
     $pdo = db();
-    $results = [];
+
+    $studentIds = [];
+    $nameKeys = [];
+    $subjectKeys = [];
     foreach ($rows as $row) {
+        if (!is_array($row)) continue;
+        $studentId = trim((string) ($row['student_id'] ?? ''));
+        $firstName = trim((string) ($row['first_name'] ?? ''));
+        $lastName = trim((string) ($row['last_name'] ?? ''));
+        $subjectCode = trim((string) ($row['subject_code'] ?? ''));
+
+        if ($studentId !== '') $studentIds[] = $studentId;
+        if ($firstName !== '' && $lastName !== '') $nameKeys[] = clean_key($firstName . '|' . $lastName);
+        if ($subjectCode !== '') $subjectKeys[] = clean_key($subjectCode);
+    }
+
+    $studentIds = unique_non_empty($studentIds);
+    $subjectKeys = array_values(array_unique($subjectKeys));
+    $nameKeys = array_values(array_unique($nameKeys));
+
+    $studentsById = [];
+    if (!empty($studentIds)) {
+        $sql = "SELECT st.s_id_no, st.s_fn, st.s_ln, st.s_mn, st.s_course_id, st.s_yr_lvl, co.course_code
+                FROM tbl_student st
+                LEFT JOIN tbl_course co ON co.course_id = st.s_course_id
+                WHERE st.s_id_no IN (" . placeholders(count($studentIds)) . ")";
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute($studentIds);
+        foreach ($stmt->fetchAll() as $student) {
+            $studentsById[clean_key($student['s_id_no'] ?? '')] = $student;
+        }
+    }
+
+    $studentsByName = [];
+    if (!empty($nameKeys)) {
+        $sql = "SELECT st.s_id_no, st.s_fn, st.s_ln, st.s_mn, st.s_course_id, st.s_yr_lvl, co.course_code,
+                       CONCAT(UPPER(TRIM(st.s_fn)), '|', UPPER(TRIM(st.s_ln))) AS name_key
+                FROM tbl_student st
+                LEFT JOIN tbl_course co ON co.course_id = st.s_course_id
+                WHERE CONCAT(UPPER(TRIM(st.s_fn)), '|', UPPER(TRIM(st.s_ln))) IN (" . placeholders(count($nameKeys)) . ")";
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute($nameKeys);
+        $temp = [];
+        foreach ($stmt->fetchAll() as $student) {
+            $key = clean_key($student['name_key'] ?? '');
+            $temp[$key][] = $student;
+        }
+        foreach ($temp as $key => $matches) {
+            // Use name fallback only when it points to exactly one student.
+            if (count($matches) === 1) $studentsByName[$key] = $matches[0];
+        }
+    }
+
+    $subjectsByCode = [];
+    if (!empty($subjectKeys)) {
+        $sql = "SELECT subject_id, subject_code, subject_description, subject_units
+                FROM tbl_subject
+                WHERE UPPER(TRIM(subject_code)) IN (" . placeholders(count($subjectKeys)) . ")";
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute($subjectKeys);
+        foreach ($stmt->fetchAll() as $subject) {
+            $key = clean_key($subject['subject_code'] ?? '');
+            if (!isset($subjectsByCode[$key])) $subjectsByCode[$key] = $subject;
+        }
+    }
+
+    $resolvedRows = [];
+    $resolvedStudentIds = [];
+    $resolvedSubjectIds = [];
+    foreach ($rows as $index => $row) {
         if (!is_array($row)) {
+            $resolvedRows[$index] = ['row' => $row, 'student' => null, 'subject' => null, 'invalid' => true];
+            continue;
+        }
+
+        $studentId = trim((string) ($row['student_id'] ?? ''));
+        $firstName = trim((string) ($row['first_name'] ?? ''));
+        $lastName = trim((string) ($row['last_name'] ?? ''));
+        $subjectCode = trim((string) ($row['subject_code'] ?? ''));
+
+        $student = null;
+        if ($studentId !== '') {
+            $student = $studentsById[clean_key($studentId)] ?? null;
+        }
+        if (!$student && $firstName !== '' && $lastName !== '') {
+            $student = $studentsByName[clean_key($firstName . '|' . $lastName)] ?? null;
+        }
+
+        $subject = $subjectsByCode[clean_key($subjectCode)] ?? null;
+        $resolvedRows[$index] = ['row' => $row, 'student' => $student, 'subject' => $subject, 'invalid' => false];
+
+        if ($student && $subject) {
+            $resolvedStudentIds[] = (string) $student['s_id_no'];
+            $resolvedSubjectIds[] = (string) $subject['subject_id'];
+        }
+    }
+
+    $resolvedStudentIds = unique_non_empty($resolvedStudentIds);
+    $resolvedSubjectIds = unique_non_empty($resolvedSubjectIds);
+
+    $gradesByKey = [];
+    if (!empty($resolvedStudentIds) && !empty($resolvedSubjectIds)) {
+        $sql = "SELECT sg.sg_id, sg.sg_student_id, sg.sg_subject_id, sg.sg_period_id,
+                       sg.sg_grade, sg.sg_credits, sg.sg_grade_status, sg.sg_course_id,
+                       co.course_code, subj.subject_units, subj.subject_description
+                FROM tbl_students_grades sg
+                LEFT JOIN tbl_course co ON co.course_id = sg.sg_course_id
+                LEFT JOIN tbl_subject subj ON subj.subject_id = sg.sg_subject_id
+                WHERE sg.sg_period_id = ?
+                  AND sg.sg_student_id IN (" . placeholders(count($resolvedStudentIds)) . ")
+                  AND sg.sg_subject_id IN (" . placeholders(count($resolvedSubjectIds)) . ")";
+        $params = array_merge([$periodId], $resolvedStudentIds, $resolvedSubjectIds);
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute($params);
+        foreach ($stmt->fetchAll() as $grade) {
+            $key = clean_key(($grade['sg_student_id'] ?? '') . '|' . ($grade['sg_subject_id'] ?? '') . '|' . $periodId);
+            if (!isset($gradesByKey[$key])) $gradesByKey[$key] = $grade;
+        }
+    }
+
+    $results = [];
+    foreach ($resolvedRows as $resolved) {
+        if (($resolved['invalid'] ?? false) === true) {
             $results[] = [
                 'exists' => false,
+                'student_found' => false,
+                'subject_found' => false,
                 'grade_matches' => null,
-                'units_match_database' => null,
-                'units_match_subject_master' => null,
+                'units_match' => null,
                 'message' => 'Invalid row payload.',
             ];
             continue;
         }
-        $results[] = check_one_row($pdo, $row);
+
+        $row = $resolved['row'];
+        $student = $resolved['student'];
+        $subject = $resolved['subject'];
+        $excelGrade = trim((string) ($row['excel_grade'] ?? ''));
+        $excelUnits = trim((string) ($row['units'] ?? ''));
+
+        if (!$student) {
+            $results[] = [
+                'exists' => false,
+                'student_found' => false,
+                'subject_found' => null,
+                'grade_matches' => null,
+                'units_match' => null,
+                'database_grade' => null,
+                'database_credits' => null,
+                'subject_units' => null,
+                'database_course' => null,
+                'database_reference' => null,
+                'message' => 'No student matched by ID or first/last name.',
+            ];
+            continue;
+        }
+
+        if (!$subject) {
+            $results[] = [
+                'exists' => false,
+                'student_found' => true,
+                'subject_found' => false,
+                'grade_matches' => null,
+                'units_match' => null,
+                'database_grade' => null,
+                'database_credits' => null,
+                'subject_units' => null,
+                'database_course' => $student['course_code'] ?? null,
+                'database_reference' => null,
+                'message' => 'Student found, but subject code was not found in tbl_subject.',
+            ];
+            continue;
+        }
+
+        $gradeKey = clean_key(($student['s_id_no'] ?? '') . '|' . ($subject['subject_id'] ?? '') . '|' . $periodId);
+        $grade = $gradesByKey[$gradeKey] ?? null;
+        if (!$grade) {
+            $results[] = [
+                'exists' => false,
+                'student_found' => true,
+                'subject_found' => true,
+                'grade_matches' => null,
+                'units_match' => null,
+                'database_grade' => null,
+                'database_credits' => null,
+                'subject_units' => $subject['subject_units'] ?? null,
+                'database_course' => $student['course_code'] ?? null,
+                'subject_description' => $subject['subject_description'] ?? null,
+                'database_reference' => null,
+                'message' => 'Student and subject exist, but no grade record exists for the selected period.',
+            ];
+            continue;
+        }
+
+        $databaseGrade = $grade['sg_grade'] ?? '';
+        $databaseCredits = $grade['sg_credits'] ?? '';
+        $subjectUnits = first_non_empty([$grade['subject_units'] ?? '', $subject['subject_units'] ?? '']);
+        $gradeMatches = $excelGrade === '' ? null : normalize_grade($databaseGrade) === normalize_grade($excelGrade);
+
+        $unitsMatches = null;
+        $excelUnitsNorm = normalize_grade($excelUnits);
+        if ($excelUnitsNorm !== '') {
+            $dbCreditsNorm = normalize_grade($databaseCredits);
+            $subjectUnitsNorm = normalize_grade($subjectUnits);
+            if ($dbCreditsNorm !== '') {
+                $unitsMatches = $excelUnitsNorm === $dbCreditsNorm;
+            }
+            if ($subjectUnitsNorm !== '' && $unitsMatches !== false) {
+                $unitsMatches = $excelUnitsNorm === $subjectUnitsNorm;
+            }
+        }
+
+        $messages = [];
+        if ($gradeMatches === false) $messages[] = 'Grade differs';
+        if ($unitsMatches === false) $messages[] = 'Units differ';
+        if (empty($messages)) $messages[] = 'Record found';
+
+        $results[] = [
+            'exists' => true,
+            'student_found' => true,
+            'subject_found' => true,
+            'grade_matches' => $gradeMatches,
+            'units_match' => $unitsMatches,
+            'database_grade' => $databaseGrade,
+            'database_credits' => $databaseCredits,
+            'subject_units' => $subjectUnits,
+            'database_course' => $grade['course_code'] ?? ($student['course_code'] ?? null),
+            'subject_description' => $grade['subject_description'] ?? ($subject['subject_description'] ?? null),
+            'database_reference' => $grade['sg_id'] ?? null,
+            'message' => implode(' and ', $messages) . '.',
+        ];
     }
 
     json_response([
         'ok' => true,
+        'period_id' => $periodId,
         'count' => count($results),
         'results' => $results,
+        'batch_optimized' => true,
     ]);
 } catch (Throwable $e) {
     json_response([
         'ok' => false,
         'message' => $e->getMessage(),
-        'hint' => 'Check config.php DB connection and make sure cfcissmsdb with tbl_period/tbl_student/tbl_course/tbl_students_grades/tbl_subject is imported.',
+        'hint' => 'Check config.php credentials and confirm tbl_student, tbl_subject, tbl_period, tbl_course, and tbl_students_grades exist.',
     ], 500);
 }

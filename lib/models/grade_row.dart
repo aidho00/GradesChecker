@@ -1,6 +1,7 @@
 class GradeRow {
   GradeRow({
     required this.excelRowNumber,
+    required this.subjectNo,
     required this.studentId,
     required this.lastName,
     required this.firstName,
@@ -14,20 +15,21 @@ class GradeRow {
     required this.semester,
     required this.periodId,
     this.existsInDatabase = false,
+    this.studentFound,
+    this.subjectFound,
     this.gradeMatches,
-    this.unitsMatchDatabase,
-    this.unitsMatchSubjectMaster,
+    this.unitsMatch,
     this.databaseGrade,
-    this.databaseUnits,
+    this.databaseCredits,
     this.subjectUnits,
+    this.databaseCourse,
+    this.subjectDescription,
     this.databaseReference,
-    this.databaseStudentId,
-    this.databaseSubjectId,
-    this.periodLabel,
     this.message,
   });
 
   final int excelRowNumber;
+  final int subjectNo;
   final String studentId;
   final String lastName;
   final String firstName;
@@ -42,40 +44,44 @@ class GradeRow {
   final String periodId;
 
   bool existsInDatabase;
+  bool? studentFound;
+  bool? subjectFound;
   bool? gradeMatches;
-  bool? unitsMatchDatabase;
-  bool? unitsMatchSubjectMaster;
+  bool? unitsMatch;
   String? databaseGrade;
-  String? databaseUnits;
+  String? databaseCredits;
   String? subjectUnits;
+  String? databaseCourse;
+  String? subjectDescription;
   String? databaseReference;
-  String? databaseStudentId;
-  String? databaseSubjectId;
-  String? periodLabel;
   String? message;
 
   String get studentName {
-    final name = [lastName, firstName, middleName]
-        .where((item) => item.trim().isNotEmpty)
-        .join(', ');
-    return name.isEmpty ? studentId : name;
+    final last = lastName.trim();
+    final first = firstName.trim();
+    final middle = middleName.trim();
+    final parts = <String>[];
+    if (last.isNotEmpty) parts.add(last);
+    if (first.isNotEmpty) parts.add(first);
+    if (middle.isNotEmpty) parts.add(middle);
+    return parts.isEmpty ? studentId : parts.join(', ');
   }
 
-  bool get hasAnyUnitsDifference =>
-      unitsMatchDatabase == false || unitsMatchSubjectMaster == false;
-
   String get statusLabel {
-    if (!existsInDatabase && gradeMatches == null) return 'Unchecked / Missing';
-    if (!existsInDatabase) return 'Missing';
-    if (gradeMatches == false && hasAnyUnitsDifference) return 'Grade + units differ';
+    if (studentFound == false) return 'Student not found';
+    if (subjectFound == false) return 'Subject not found';
+    if (!existsInDatabase && studentFound == null && subjectFound == null) return 'Unchecked';
+    if (!existsInDatabase) return 'Missing grade';
+    if (gradeMatches == false && unitsMatch == false) return 'Grade + Units differ';
     if (gradeMatches == false) return 'Grade differs';
-    if (hasAnyUnitsDifference) return 'Units differ';
+    if (unitsMatch == false) return 'Units differ';
     return 'Exists';
   }
 
   Map<String, dynamic> toApiJson() {
     return {
       'excel_row_number': excelRowNumber,
+      'subject_no': subjectNo,
       'student_id': studentId,
       'last_name': lastName,
       'first_name': firstName,
@@ -85,17 +91,16 @@ class GradeRow {
       'subject_code': subjectCode,
       'units': units,
       'excel_grade': excelGrade,
+      'period_id': periodId,
       'school_year': schoolYear,
       'semester': semester,
-      'period_id': periodId,
     };
   }
 
   GradeRow copyWithCheckResult(Map<String, dynamic> json) {
-    bool? boolField(String key) => json[key] is bool ? json[key] as bool : null;
-
     return GradeRow(
       excelRowNumber: excelRowNumber,
+      subjectNo: subjectNo,
       studentId: studentId,
       lastName: lastName,
       firstName: firstName,
@@ -109,16 +114,16 @@ class GradeRow {
       semester: semester,
       periodId: periodId,
       existsInDatabase: json['exists'] == true,
-      gradeMatches: boolField('grade_matches'),
-      unitsMatchDatabase: boolField('units_match_database'),
-      unitsMatchSubjectMaster: boolField('units_match_subject_master'),
+      studentFound: json['student_found'] is bool ? json['student_found'] as bool : null,
+      subjectFound: json['subject_found'] is bool ? json['subject_found'] as bool : null,
+      gradeMatches: json['grade_matches'] is bool ? json['grade_matches'] as bool : null,
+      unitsMatch: json['units_match'] is bool ? json['units_match'] as bool : null,
       databaseGrade: json['database_grade']?.toString(),
-      databaseUnits: json['database_units']?.toString(),
+      databaseCredits: json['database_credits']?.toString(),
       subjectUnits: json['subject_units']?.toString(),
+      databaseCourse: json['database_course']?.toString(),
+      subjectDescription: json['subject_description']?.toString(),
       databaseReference: json['database_reference']?.toString(),
-      databaseStudentId: json['database_student_id']?.toString(),
-      databaseSubjectId: json['database_subject_id']?.toString(),
-      periodLabel: json['period_label']?.toString(),
       message: json['message']?.toString(),
     );
   }
