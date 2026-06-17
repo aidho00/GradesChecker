@@ -1,0 +1,18 @@
+{
+  "rows": [
+    {
+      "student_id": "1900868",
+      "last_name": "BARRIENTOS",
+      "first_name": "RYAN",
+      "middle_name": "A.",
+      "course": "BACHELOR OF SCIENCE IN CRIMINOLOGY",
+      "year_level": "1",
+      "subject_code": "CRIM 1",
+      "units": "3",
+      "excel_grade": "2.0",
+      "school_year": "2019-2020",
+      "semester": "1ST SEM",
+      "period_id": ""
+    }
+  ]
+}
