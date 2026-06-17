@@ -1,5 +1,5 @@
 name: flutter_grades_checker
-description: Web-based Excel to MySQL grade cross-checker for HEMIS promotional list files.
+description: Web-based Excel to Database grade cross-checker for HEMIS promotional list files.
 publish_to: 'none'
 version: 0.1.0+1
 

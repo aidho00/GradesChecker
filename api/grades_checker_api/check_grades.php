@@ -24,6 +24,39 @@ function placeholders(int $count): string
     return implode(',', array_fill(0, $count, '?'));
 }
 
+
+function grade_records_payload(array $grades): array
+{
+    $out = [];
+    foreach ($grades as $grade) {
+        if (!is_array($grade)) continue;
+        $out[] = [
+            'reference' => $grade['sg_id'] ?? '',
+            'grade' => $grade['sg_grade'] ?? '',
+            'credits' => $grade['sg_credits'] ?? '',
+            'subject_units' => $grade['subject_units'] ?? '',
+            'course_code' => $grade['course_code'] ?? '',
+            'subject_description' => $grade['subject_description'] ?? '',
+            'grade_status' => $grade['sg_grade_status'] ?? '',
+            'class_id' => $grade['sg_class_id'] ?? '',
+            'period_id' => $grade['sg_period_id'] ?? '',
+            'period_label' => trim((string) ($grade['period_label'] ?? '')),
+        ];
+    }
+    return $out;
+}
+
+function choose_best_grade(array $grades, string $excelGrade): ?array
+{
+    if (empty($grades)) return null;
+    $excelNorm = normalize_grade($excelGrade);
+    if ($excelNorm !== '') {
+        foreach ($grades as $grade) {
+            if (normalize_grade($grade['sg_grade'] ?? '') === $excelNorm) return $grade;
+        }
+    }
+    return $grades[0];
+}
 function unique_non_empty(array $values): array
 {
     $seen = [];
@@ -58,8 +91,8 @@ try {
     }
 
     // Keep each request bounded. Flutter sends large workbooks in batches.
-    if (count($rows) > 500) {
-        json_response(['ok' => false, 'message' => 'Too many rows in one request. Use client-side batching of 500 rows or less.'], 413);
+    if (count($rows) > 1000) {
+        json_response(['ok' => false, 'message' => 'Too many rows in one request. Use client-side batching of 1000 rows or less.'], 413);
     }
 
     $pdo = db();
@@ -166,11 +199,13 @@ try {
     $gradesByKey = [];
     if (!empty($resolvedStudentIds) && !empty($resolvedSubjectIds)) {
         $sql = "SELECT sg.sg_id, sg.sg_student_id, sg.sg_subject_id, sg.sg_period_id,
-                       sg.sg_grade, sg.sg_credits, sg.sg_grade_status, sg.sg_course_id,
-                       co.course_code, subj.subject_units, subj.subject_description
+                       sg.sg_grade, sg.sg_credits, sg.sg_grade_status, sg.sg_course_id, sg.sg_class_id,
+                       co.course_code, subj.subject_units, subj.subject_description,
+                       CONCAT(COALESCE(p.period_name, ''), ' - ', COALESCE(p.period_semester, '')) AS period_label
                 FROM tbl_students_grades sg
                 LEFT JOIN tbl_course co ON co.course_id = sg.sg_course_id
                 LEFT JOIN tbl_subject subj ON subj.subject_id = sg.sg_subject_id
+                LEFT JOIN tbl_period p ON p.period_id = sg.sg_period_id
                 WHERE sg.sg_period_id = ?
                   AND sg.sg_student_id IN (" . placeholders(count($resolvedStudentIds)) . ")
                   AND sg.sg_subject_id IN (" . placeholders(count($resolvedSubjectIds)) . ")";
@@ -179,7 +214,31 @@ try {
         $stmt->execute($params);
         foreach ($stmt->fetchAll() as $grade) {
             $key = clean_key(($grade['sg_student_id'] ?? '') . '|' . ($grade['sg_subject_id'] ?? '') . '|' . $periodId);
-            if (!isset($gradesByKey[$key])) $gradesByKey[$key] = $grade;
+            $gradesByKey[$key][] = $grade;
+        }
+    }
+
+
+    $otherGradesByKey = [];
+    if (!empty($resolvedStudentIds) && !empty($resolvedSubjectIds)) {
+        $sql = "SELECT sg.sg_id, sg.sg_student_id, sg.sg_subject_id, sg.sg_period_id,
+                       sg.sg_grade, sg.sg_credits, sg.sg_grade_status, sg.sg_course_id, sg.sg_class_id,
+                       co.course_code, subj.subject_units, subj.subject_description,
+                       CONCAT(COALESCE(p.period_name, ''), ' - ', COALESCE(p.period_semester, '')) AS period_label
+                FROM tbl_students_grades sg
+                LEFT JOIN tbl_course co ON co.course_id = sg.sg_course_id
+                LEFT JOIN tbl_subject subj ON subj.subject_id = sg.sg_subject_id
+                LEFT JOIN tbl_period p ON p.period_id = sg.sg_period_id
+                WHERE sg.sg_period_id <> ?
+                  AND sg.sg_student_id IN (" . placeholders(count($resolvedStudentIds)) . ")
+                  AND sg.sg_subject_id IN (" . placeholders(count($resolvedSubjectIds)) . ")
+                ORDER BY sg.sg_period_id DESC, sg.sg_id DESC";
+        $params = array_merge([$periodId], $resolvedStudentIds, $resolvedSubjectIds);
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute($params);
+        foreach ($stmt->fetchAll() as $grade) {
+            $key = clean_key(($grade['sg_student_id'] ?? '') . '|' . ($grade['sg_subject_id'] ?? ''));
+            $otherGradesByKey[$key][] = $grade;
         }
     }
 
@@ -193,6 +252,8 @@ try {
                 'grade_matches' => null,
                 'units_match' => null,
                 'message' => 'Invalid row payload.',
+                'matching_grades' => [],
+                'other_period_grades' => [],
             ];
             continue;
         }
@@ -216,6 +277,8 @@ try {
                 'database_course' => null,
                 'database_reference' => null,
                 'message' => 'No student matched by ID or first/last name.',
+                'matching_grades' => [],
+                'other_period_grades' => [],
             ];
             continue;
         }
@@ -233,12 +296,17 @@ try {
                 'database_course' => $student['course_code'] ?? null,
                 'database_reference' => null,
                 'message' => 'Student found, but subject code was not found in tbl_subject.',
+                'matching_grades' => [],
+                'other_period_grades' => [],
             ];
             continue;
         }
 
+        $otherKey = clean_key(($student['s_id_no'] ?? '') . '|' . ($subject['subject_id'] ?? ''));
+        $otherGradeMatchesList = $otherGradesByKey[$otherKey] ?? [];
         $gradeKey = clean_key(($student['s_id_no'] ?? '') . '|' . ($subject['subject_id'] ?? '') . '|' . $periodId);
-        $grade = $gradesByKey[$gradeKey] ?? null;
+        $gradeMatchesList = $gradesByKey[$gradeKey] ?? [];
+        $grade = choose_best_grade($gradeMatchesList, $excelGrade);
         if (!$grade) {
             $results[] = [
                 'exists' => false,
@@ -252,7 +320,9 @@ try {
                 'database_course' => $student['course_code'] ?? null,
                 'subject_description' => $subject['subject_description'] ?? null,
                 'database_reference' => null,
-                'message' => 'Student and subject exist, but no grade record exists for the selected period.',
+                'message' => 'Student and subject exist, but no grade record exists for the selected period.' . (count($otherGradeMatchesList) > 0 ? ' Grade record exists in other period(s).' : ''),
+                'matching_grades' => [],
+                'other_period_grades' => grade_records_payload($otherGradeMatchesList),
             ];
             continue;
         }
@@ -292,7 +362,9 @@ try {
             'database_course' => $grade['course_code'] ?? ($student['course_code'] ?? null),
             'subject_description' => $grade['subject_description'] ?? ($subject['subject_description'] ?? null),
             'database_reference' => $grade['sg_id'] ?? null,
-            'message' => implode(' and ', $messages) . '.',
+            'message' => implode(' and ', $messages) . (count($gradeMatchesList) > 1 ? ' Multiple grade records found for this subject.' : '.') . (count($otherGradeMatchesList) > 0 ? ' Other-period grade record(s) also exist.' : ''),
+            'matching_grades' => grade_records_payload($gradeMatchesList),
+            'other_period_grades' => grade_records_payload($otherGradeMatchesList),
         ];
     }
 

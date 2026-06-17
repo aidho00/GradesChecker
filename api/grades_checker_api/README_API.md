@@ -1,22 +1,12 @@
 # Grades Checker API
 
-Copy this folder to either:
-
-```text
-C:\xampp\htdocs\grades_checker_api
-```
-
-or:
-
-```text
-C:\wamp64\www\grades_checker_api
-```
-
 Endpoints:
 
 - `ping.php` - connection test
-- `periods.php` - loads academic periods from `tbl_period`
-- `inspect_schema.php` - quick schema check
-- `check_grades.php` - batch grade cross-check endpoint
+- `periods.php` - returns academic periods from `tbl_period`
+- `parse_excel.php` - parses uploaded HEMIS `.xlsx` using pure PHP ZIP/XML reading
+- `check_grades.php` - checks parsed subject-grade rows against HEMIS tables in batches
+- `export_excel.php` - generates formatted Excel-compatible `.xls` export
+- `inspect_schema.php` - basic schema helper
 
-`check_grades.php` accepts up to 500 subject-grade records per request. The Flutter app sends large files in batches.
+Configure database connection in `config.php`.

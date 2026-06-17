@@ -17,6 +17,19 @@ try {
     foreach ($stmt->fetchAll() as $row) {
         $name = trim((string) ($row['period_name'] ?? ''));
         $semester = trim((string) ($row['period_semester'] ?? ''));
+        $normalizedSemester = strtolower(preg_replace('/[^a-z0-9]+/', '', $semester));
+        if (str_contains($normalizedSemester, 'tri') || str_contains($normalizedSemester, 'trimester') || str_contains($normalizedSemester, '3rd')) {
+            continue;
+        }
+        $allowedSemesterValues = [
+            '1', '1st', '1stsem', '1stsemester', 'first', 'firstsem', 'firstsemester',
+            '2', '2nd', '2ndsem', '2ndsemester', 'second', 'secondsem', 'secondsemester',
+            'summer', 'summersem', 'summersemester',
+        ];
+        if (!in_array($normalizedSemester, $allowedSemesterValues, true)) {
+            continue;
+        }
+
         $periods[] = [
             'period_id' => (string) $row['period_id'],
             'period_name' => $name,

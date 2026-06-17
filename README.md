@@ -1,32 +1,32 @@
-# Grades Checker Starter
+# UNO to SMS Grade Checker
 
-Flutter Web + PHP API starter for checking HEMIS promotional-list Excel grades against MySQL.
+Web/desktop Flutter + PHP/Database checker for comparing legacy UNO promotional-list Excel files against current SMS grade records.
 
-## Current UI version
+## What this version does
 
-This build is optimized for web/desktop use.
+- Streams the uploaded `.xlsx` to the PHP API instead of loading/decoding the full workbook inside Flutter Web.
+- Parses the workbook on the PHP API to reduce browser upload/parse freezes.
+- Checks grade records in smaller batches against:
+  - `tbl_period`
+  - `tbl_student`
+  - `tbl_course`
+  - `tbl_subject`
+  - `tbl_students_grades`
+- Displays one compact table row per student with `Subject 1` to `Subject 10` across the row.
+- Uses cached student grouping and pagination to reduce table lag.
+- Supports 50, 100, 150, and 250 rows per page.
+- Provides pagination controls at the top and bottom of the table.
+- Keeps the horizontal table position controllable using a bottom sticky horizontal scroll control.
+- Lets you tap a subject cell to inspect subject description, selected-period DB grades, duplicate grades, and grades found in other academic periods.
+- Exports a formatted Excel-compatible `.xls` file with status colors and DB comparison columns.
+- Generates an overall interpretation after the table.
 
-### Included changes
+## Install API
 
-- One full table row per student.
-- Columns for Subject 1 to Subject 10.
-- Color legend for status.
-- Full-width data workspace below the setup controls.
-- Page scrolls naturally from top to bottom; the results area is no longer trapped in a limited viewport.
-- Connection/API settings are hidden inside a modal.
-- Academic period selector shows `period_name - period_semester` while hiding the internal period ID.
-- Faster parsing/checking behavior:
-  - Excel rows are parsed with cached column indexes.
-  - UI progress is throttled to avoid excessive rebuilds.
-  - Database checking uses batches of 500 records per request.
-  - PHP checks each batch using grouped SQL lookups instead of one query per row.
-
-## Folder placement
-
-Copy this folder:
+Copy:
 
 ```text
-api/grades_checker_api
+grades_checker_starter/api/grades_checker_api
 ```
 
 To XAMPP:
@@ -41,55 +41,34 @@ Or WAMP:
 C:\wamp64\www\grades_checker_api
 ```
 
-## Database config
-
-Edit:
-
-```text
-api/grades_checker_api/config.php
-```
-
-Typical local settings:
-
-```php
-const DB_HOST = '127.0.0.1';
-const DB_PORT = '3306';
-const DB_NAME = 'cfcissmsdb';
-const DB_USER = 'root';
-const DB_PASS = '';
-```
+Edit `config.php` if your Database username/password/port is different.
 
 ## Test API
 
-Open in browser:
+Open:
 
 ```text
 http://localhost/grades_checker_api/ping.php
 http://localhost/grades_checker_api/periods.php
-http://localhost/grades_checker_api/inspect_schema.php
 ```
 
 ## Run Flutter Web
 
-From:
-
-```text
-flutter_grades_checker
-```
-
-Run:
-
 ```bash
+cd grades_checker_starter/flutter_grades_checker
+flutter clean
 flutter pub get
 flutter run -d chrome
 ```
 
-Or fixed web-server port:
+Default API endpoint in the app:
 
-```bash
-flutter run -d web-server --web-port 53902
+```text
+http://localhost/grades_checker_api/check_grades.php
 ```
 
-## Notes on very large Excel files
+Use the Connection button only if Apache is on another port or server IP.
 
-The app now batches database checking and throttles UI updates. The only unavoidable pause can still happen while the `excel` package decodes the workbook, because that package reads the XLSX workbook synchronously in Flutter Web. After decoding, parsing and database checking are chunked so the browser can repaint progress.
+## Notes
+
+The export uses an Excel-compatible HTML `.xls` file so formatting works without requiring Composer, PhpSpreadsheet, or PHP ZipArchive.
