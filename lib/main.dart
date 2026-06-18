@@ -93,6 +93,18 @@ class _GradesCheckerPageState extends State<GradesCheckerPage> {
   );
   final _searchController = TextEditingController();
   final _horizontalController = ScrollController();
+  double _horizontalPixels = 0.0;
+  double _horizontalMaxExtent = 0.0;
+  double _horizontalViewportDimension = 1.0;
+  final _usernameController = TextEditingController();
+  final _passwordController = TextEditingController();
+
+  String? _authToken;
+  String _authUsername = '';
+  String _authDisplayName = '';
+  String _authRole = '';
+  bool _obscurePassword = true;
+  bool _loggingIn = false;
 
   List<GradePeriod> _periods = [];
   GradePeriod? _selectedPeriod;
@@ -127,23 +139,75 @@ class _GradesCheckerPageState extends State<GradesCheckerPage> {
   @override
   void initState() {
     super.initState();
-    _loadPeriods();
+    _horizontalController.addListener(_syncHorizontalMetricsFromController);
+    _restoreSavedSession();
   }
 
   @override
   void dispose() {
     _apiController.dispose();
     _searchController.dispose();
+    _horizontalController.removeListener(_syncHorizontalMetricsFromController);
     _horizontalController.dispose();
+    _usernameController.dispose();
+    _passwordController.dispose();
     super.dispose();
   }
 
-  GradeCheckApi get _api => GradeCheckApi(endpointUrl: _apiController.text.trim());
+  GradeCheckApi get _api => GradeCheckApi(endpointUrl: _apiController.text.trim(), authToken: _authToken);
+
+  bool get _isLoggedIn => _authToken?.trim().isNotEmpty == true;
 
   bool get _hasProgress => _isBusy && _operationLabel.trim().isNotEmpty;
   double? get _progressValue {
     if (!_hasProgress || _operationTotal <= 0) return null;
     return (_operationDone / _operationTotal).clamp(0, 1).toDouble();
+  }
+
+  double _safeScrollMetric(double value, {double fallback = 0.0}) {
+    if (value.isNaN || value.isInfinite) return fallback;
+    return value;
+  }
+
+  void _updateHorizontalMetrics({
+    required double pixels,
+    required double maxExtent,
+    required double viewportDimension,
+  }) {
+    if (!mounted) return;
+
+    final nextMax = math.max(0.0, _safeScrollMetric(maxExtent));
+    final nextViewport = math.max(1.0, _safeScrollMetric(viewportDimension, fallback: 1.0));
+    final nextPixels = _safeScrollMetric(pixels).clamp(0.0, nextMax).toDouble();
+
+    final changed = (nextPixels - _horizontalPixels).abs() > 0.5 ||
+        (nextMax - _horizontalMaxExtent).abs() > 0.5 ||
+        (nextViewport - _horizontalViewportDimension).abs() > 0.5;
+    if (!changed) return;
+
+    setState(() {
+      _horizontalPixels = nextPixels;
+      _horizontalMaxExtent = nextMax;
+      _horizontalViewportDimension = nextViewport;
+    });
+  }
+
+  void _syncHorizontalMetricsFromController() {
+    if (!mounted || !_horizontalController.hasClients) {
+      return;
+    }
+    final position = _horizontalController.position;
+    _updateHorizontalMetrics(
+      pixels: position.pixels,
+      maxExtent: position.maxScrollExtent,
+      viewportDimension: position.viewportDimension,
+    );
+  }
+
+  void _queueHorizontalMetricSync() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _syncHorizontalMetricsFromController();
+    });
   }
 
   int _pageCount(int total) {
@@ -218,6 +282,7 @@ class _GradesCheckerPageState extends State<GradesCheckerPage> {
     for (final row in group.rows) {
       final subjectText = [
         row.subjectCode,
+        row.excelSubjectDescription,
         row.subjectDescription ?? '',
         row.excelGrade,
         row.databaseGrade ?? '',
@@ -232,12 +297,16 @@ class _GradesCheckerPageState extends State<GradesCheckerPage> {
     return false;
   }
 
+  String _rowGroupKey(GradeRow row) {
+    return row.studentId.trim().isNotEmpty
+        ? row.studentId.trim()
+        : '${row.lastName}|${row.firstName}|${row.middleName}';
+  }
+
   List<_StudentGradeGroup> _groupByStudent(List<GradeRow> source) {
     final map = LinkedHashMap<String, _StudentGradeGroup>();
     for (final row in source) {
-      final key = row.studentId.trim().isNotEmpty
-          ? row.studentId.trim()
-          : '${row.lastName}|${row.firstName}|${row.middleName}';
+      final key = _rowGroupKey(row);
       map.putIfAbsent(
         key,
         () => _StudentGradeGroup(
@@ -249,6 +318,7 @@ class _GradesCheckerPageState extends State<GradesCheckerPage> {
           studentName: row.studentName,
           course: row.databaseCourse?.isNotEmpty == true ? row.databaseCourse! : row.course,
           yearLevel: row.yearLevel,
+          birthDate: row.birthDate,
           excelRowNumber: row.excelRowNumber,
           rows: <GradeRow>[],
         ),
@@ -278,7 +348,96 @@ class _GradesCheckerPageState extends State<GradesCheckerPage> {
     };
   }
 
+  void _restoreSavedSession() {
+    final storage = html.window.localStorage;
+    final token = storage['gc_auth_token'] ?? '';
+    if (token.trim().isEmpty) return;
+
+    _authToken = token;
+    _authUsername = storage['gc_auth_username'] ?? '';
+    _authDisplayName = storage['gc_auth_display_name'] ?? _authUsername;
+    _authRole = storage['gc_auth_role'] ?? '';
+    _status = 'Signed in as ${_authDisplayName.isEmpty ? _authUsername : _authDisplayName}. Loading academic years...';
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _loadPeriods();
+    });
+  }
+
+  Future<void> _login() async {
+    final username = _usernameController.text.trim();
+    final password = _passwordController.text;
+
+    if (username.isEmpty || password.isEmpty) {
+      setState(() => _status = 'Enter your SMS username and password.');
+      return;
+    }
+
+    setState(() {
+      _loggingIn = true;
+      _status = 'Signing in...';
+    });
+
+    try {
+      final session = await GradeCheckApi(endpointUrl: _apiController.text.trim()).login(
+        username: username,
+        password: password,
+      );
+
+      html.window.localStorage['gc_auth_token'] = session.token;
+      html.window.localStorage['gc_auth_username'] = session.username;
+      html.window.localStorage['gc_auth_display_name'] = session.displayName;
+      html.window.localStorage['gc_auth_role'] = session.role;
+
+      setState(() {
+        _authToken = session.token;
+        _authUsername = session.username;
+        _authDisplayName = session.displayName;
+        _authRole = session.role;
+        _passwordController.clear();
+        _periods = [];
+        _selectedPeriod = null;
+        _status = 'Signed in as ${session.displayName}. Loading academic years...';
+      });
+
+      await _loadPeriods();
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _status = 'Login failed. $error');
+    } finally {
+      if (mounted) setState(() => _loggingIn = false);
+    }
+  }
+
+  void _logout() {
+    html.window.localStorage.remove('gc_auth_token');
+    html.window.localStorage.remove('gc_auth_username');
+    html.window.localStorage.remove('gc_auth_display_name');
+    html.window.localStorage.remove('gc_auth_role');
+
+    setState(() {
+      _authToken = null;
+      _authUsername = '';
+      _authDisplayName = '';
+      _authRole = '';
+      _periods = [];
+      _selectedPeriod = null;
+      _rows = [];
+      _allGroups = [];
+      _visibleGroups = [];
+      _fileName = '';
+      _interpretation = null;
+      _refreshDerivedData(resetPage: true);
+      _status = 'Signed out. Please login to access Grades Checker.';
+    });
+  }
+
   Future<void> _loadPeriods() async {
+    if (!_isLoggedIn) {
+      setState(() => _status = 'Please login to load academic years.');
+      return;
+    }
+
     setState(() {
       _loadingPeriods = true;
       _status = 'Loading academic years from Database...';
@@ -654,7 +813,16 @@ class _GradesCheckerPageState extends State<GradesCheckerPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Text(row.subjectDescription?.trim().isNotEmpty == true ? row.subjectDescription! : 'No subject description returned yet.', style: const TextStyle(color: Color(0xFF475569))),
+                  Text('Excel description: ${row.excelSubjectDescription.trim().isNotEmpty ? row.excelSubjectDescription : '-'}', style: const TextStyle(color: Color(0xFF475569), fontSize: _kBodyFontSize, fontWeight: FontWeight.w800)),
+                  SizedBox(height: _s(4)),
+                  Text('Matched DB description: ${row.subjectDescription?.trim().isNotEmpty == true ? row.subjectDescription! : '-'}', style: const TextStyle(color: Color(0xFF475569), fontSize: _kBodyFontSize)),
+                  SizedBox(height: _s(12)),
+                  Text('Subject catalog records for ${row.subjectCode.isEmpty ? 'this code' : row.subjectCode} (${row.subjectVariants.length})', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: _kHeaderFontSize)),
+                  SizedBox(height: _s(8)),
+                  if (row.subjectVariants.isEmpty)
+                    const Text('No matching tbl_subject record list was returned yet. Run Check to load subject descriptions and units.', style: TextStyle(color: Color(0xFF64748B), fontSize: _kBodyFontSize))
+                  else
+                    _SubjectCatalogTable(subjects: row.subjectVariants),
                   SizedBox(height: _s(12)),
                   Wrap(
                     spacing: _s(8),
@@ -704,12 +872,408 @@ class _GradesCheckerPageState extends State<GradesCheckerPage> {
     );
   }
 
+
+
+  String _normalizeYearLevelLabel(String value) {
+    final raw = value.trim();
+    final compact = raw.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '');
+    if (compact == '1' || compact == '1st' || compact == 'first' || compact == '1styear' || compact == 'firstyear') return '1st Year';
+    if (compact == '2' || compact == '2nd' || compact == 'second' || compact == '2ndyear' || compact == 'secondyear') return '2nd Year';
+    if (compact == '3' || compact == '3rd' || compact == 'third' || compact == '3rdyear' || compact == 'thirdyear') return '3rd Year';
+    if (compact == '4' || compact == '4th' || compact == 'fourth' || compact == '4thyear' || compact == 'fourthyear') return '4th Year';
+    return '1st Year';
+  }
+
+  String _courseCompareKey(String value) {
+    return value.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '');
+  }
+
+  CourseOption? _bestCourseForExcel(String excelCourse, List<CourseOption> courses) {
+    final excelKey = _courseCompareKey(excelCourse);
+    if (courses.isEmpty) return null;
+    if (excelKey.isEmpty) return courses.first;
+
+    for (final course in courses) {
+      if (_courseCompareKey(course.code) == excelKey || _courseCompareKey(course.name) == excelKey) return course;
+    }
+    for (final course in courses) {
+      final codeKey = _courseCompareKey(course.code);
+      final nameKey = _courseCompareKey(course.name);
+      if (codeKey.isNotEmpty && excelKey.contains(codeKey)) return course;
+      if (nameKey.isNotEmpty && (excelKey.contains(nameKey) || nameKey.contains(excelKey))) return course;
+    }
+    return courses.first;
+  }
+
+  CourseOption? _courseById(List<CourseOption> courses, String? id) {
+    if (id == null) return null;
+    for (final course in courses) {
+      if (course.id == id) return course;
+    }
+    return null;
+  }
+
+  void _handleStudentTap(_StudentGradeGroup group) {
+    final studentMissing = group.rows.any((row) => row.studentFound == false);
+    if (studentMissing) {
+      _openStudentProfileForm(group);
+      return;
+    }
+    _openStudentDetails(group);
+  }
+
+  void _openStudentProfileForm(_StudentGradeGroup group) {
+    final studentIdController = TextEditingController(text: group.studentId);
+    final lastNameController = TextEditingController(text: group.lastName);
+    final firstNameController = TextEditingController(text: group.firstName);
+    final middleNameController = TextEditingController(text: group.middleName);
+    final birthDateController = TextEditingController(text: group.birthDate);
+    var selectedYear = _normalizeYearLevelLabel(group.yearLevel);
+    var selectedGender = 'Male';
+    CourseOption? selectedCourse;
+    var saving = false;
+    final coursesFuture = _api.fetchCourses();
+
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: const Text('Create student profile'),
+              content: SizedBox(
+                width: _s(720),
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const Text(
+                        'Review and update the UNO details before saving to tbl_student.',
+                        style: TextStyle(fontSize: _kBodyFontSize, color: Color(0xFF64748B)),
+                      ),
+                      SizedBox(height: _s(12)),
+                      TextField(
+                        controller: studentIdController,
+                        enabled: !saving,
+                        decoration: const InputDecoration(labelText: 'Student ID'),
+                      ),
+                      SizedBox(height: _s(8)),
+                      Row(
+                        children: [
+                          Expanded(child: TextField(controller: lastNameController, enabled: !saving, decoration: const InputDecoration(labelText: 'Last name'))),
+                          SizedBox(width: _s(8)),
+                          Expanded(child: TextField(controller: firstNameController, enabled: !saving, decoration: const InputDecoration(labelText: 'First name'))),
+                          SizedBox(width: _s(8)),
+                          Expanded(child: TextField(controller: middleNameController, enabled: !saving, decoration: const InputDecoration(labelText: 'Middle name'))),
+                        ],
+                      ),
+                      SizedBox(height: _s(8)),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: DropdownButtonFormField<String>(
+                              value: selectedYear,
+                              decoration: const InputDecoration(labelText: 'Year level'),
+                              items: const ['1st Year', '2nd Year', '3rd Year', '4th Year']
+                                  .map((year) => DropdownMenuItem(value: year, child: Text(year)))
+                                  .toList(),
+                              onChanged: saving ? null : (value) => setDialogState(() => selectedYear = value ?? '1st Year'),
+                            ),
+                          ),
+                          SizedBox(width: _s(8)),
+                          Expanded(
+                            child: DropdownButtonFormField<String>(
+                              value: selectedGender,
+                              decoration: const InputDecoration(labelText: 'Gender'),
+                              items: const ['Male', 'Female']
+                                  .map((gender) => DropdownMenuItem(value: gender, child: Text(gender)))
+                                  .toList(),
+                              onChanged: saving ? null : (value) => setDialogState(() => selectedGender = value ?? 'Male'),
+                            ),
+                          ),
+                        ],
+                      ),
+                      SizedBox(height: _s(8)),
+                      TextField(
+                        controller: birthDateController,
+                        enabled: !saving,
+                        decoration: const InputDecoration(
+                          labelText: 'Birthdate',
+                          hintText: 'YYYY-MM-DD or MM/DD/YYYY',
+                          prefixIcon: Icon(Icons.cake_rounded, size: 18),
+                        ),
+                      ),
+                      SizedBox(height: _s(8)),
+                      FutureBuilder<List<CourseOption>>(
+                        future: coursesFuture,
+                        builder: (context, snapshot) {
+                          final courses = snapshot.data ?? const <CourseOption>[];
+                          if (selectedCourse == null && courses.isNotEmpty) {
+                            selectedCourse = _bestCourseForExcel(group.course, courses);
+                          }
+                          if (snapshot.connectionState != ConnectionState.done) {
+                            return const LinearProgressIndicator(minHeight: 3);
+                          }
+                          if (snapshot.hasError) {
+                            return Text('Unable to load tbl_course choices: ${snapshot.error}', style: const TextStyle(color: Color(0xFF991B1B), fontSize: _kBodyFontSize));
+                          }
+                          return DropdownButtonFormField<String>(
+                            value: selectedCourse?.id,
+                            isExpanded: true,
+                            decoration: InputDecoration(
+                              labelText: 'Course from tbl_course',
+                              helperText: group.course.trim().isEmpty ? null : 'UNO course: ${group.course}',
+                            ),
+                            items: courses
+                                .map((course) => DropdownMenuItem(
+                                      value: course.id,
+                                      child: Text(course.displayLabel, overflow: TextOverflow.ellipsis),
+                                    ))
+                                .toList(),
+                            onChanged: saving
+                                ? null
+                                : (courseId) => setDialogState(() {
+                                      selectedCourse = _courseById(courses, courseId);
+                                    }),
+                          );
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              actions: [
+                TextButton(onPressed: saving ? null : () => Navigator.of(dialogContext).pop(), child: const Text('Cancel')),
+                FilledButton.icon(
+                  onPressed: saving
+                      ? null
+                      : () async {
+                          final studentId = studentIdController.text.trim();
+                          final firstName = firstNameController.text.trim();
+                          final lastName = lastNameController.text.trim();
+                          if (studentId.isEmpty || firstName.isEmpty || lastName.isEmpty) {
+                            setState(() => _status = 'Student ID, first name, and last name are required.');
+                            return;
+                          }
+                          setDialogState(() => saving = true);
+                          Navigator.of(dialogContext).pop();
+                          await _createStudentProfileFromGroup(
+                            group,
+                            studentId: studentId,
+                            firstName: firstName,
+                            middleName: middleNameController.text.trim(),
+                            lastName: lastName,
+                            yearLevel: selectedYear,
+                            course: selectedCourse?.code ?? group.course,
+                            courseId: selectedCourse?.id ?? '',
+                            gender: selectedGender,
+                            birthDate: birthDateController.text.trim(),
+                          );
+                        },
+                  icon: saving ? SizedBox(width: _s(14), height: _s(14), child: const CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.save_rounded, size: 18),
+                  label: Text(saving ? 'Saving...' : 'Save profile'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    ).whenComplete(() {
+      studentIdController.dispose();
+      lastNameController.dispose();
+      firstNameController.dispose();
+      middleNameController.dispose();
+      birthDateController.dispose();
+    });
+  }
+
+  void _openStudentDetails(_StudentGradeGroup group) {
+    final visual = group.visual;
+    final studentMissing = group.rows.any((row) => row.studentFound == false);
+    final canCreate = studentMissing && group.studentId.trim().isNotEmpty && group.firstName.trim().isNotEmpty && group.lastName.trim().isNotEmpty;
+
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          titlePadding: EdgeInsets.fromLTRB(_s(20), _s(16), _s(20), _s(8)),
+          contentPadding: EdgeInsets.fromLTRB(_s(20), 0, _s(20), _s(14)),
+          title: Row(
+            children: [
+              Container(width: _s(10), height: _s(10), decoration: BoxDecoration(color: visual.color, shape: BoxShape.circle)),
+              SizedBox(width: _s(10)),
+              Expanded(child: Text(group.studentName, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: _kHeaderFontSize))),
+            ],
+          ),
+          content: SizedBox(
+            width: _s(640),
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Wrap(
+                    spacing: _s(8),
+                    runSpacing: _s(8),
+                    children: [
+                      _DetailPill(label: 'Student ID', value: group.studentId.isEmpty ? '-' : group.studentId, color: const Color(0xFF2563EB)),
+                      _DetailPill(label: 'Course', value: group.course.isEmpty ? '-' : group.course, color: const Color(0xFF334155)),
+                      _DetailPill(label: 'Year', value: group.yearLevel.isEmpty ? '-' : group.yearLevel, color: const Color(0xFF334155)),
+                      _DetailPill(label: 'Birthdate', value: group.birthDate.isEmpty ? '-' : group.birthDate, color: const Color(0xFF334155)),
+                      _DetailPill(label: 'Subjects', value: group.rows.length.toString(), color: visual.color),
+                    ],
+                  ),
+                  SizedBox(height: _s(12)),
+                  Container(
+                    padding: EdgeInsets.all(_s(10)),
+                    decoration: BoxDecoration(
+                      color: visual.background,
+                      borderRadius: BorderRadius.circular(_s(12)),
+                      border: Border.all(color: visual.border),
+                    ),
+                    child: Text(
+                      studentMissing
+                          ? (canCreate
+                              ? 'This student was not found in tbl_student. You can create a basic student profile from the UNO row details, then run Check again.'
+                              : 'This student was not found. Open the profile form and complete any missing Student ID, first name, or last name before saving.')
+                          : 'Student was matched in tbl_student. Tap a subject cell to inspect grade and subject details.',
+                      style: TextStyle(color: visual.color, fontWeight: FontWeight.w800, fontSize: _kBodyFontSize),
+                    ),
+                  ),
+                  SizedBox(height: _s(12)),
+                  const Text('UNO row details', style: TextStyle(fontWeight: FontWeight.w900, fontSize: _kHeaderFontSize)),
+                  SizedBox(height: _s(8)),
+                  Table(
+                    border: const TableBorder(
+                      horizontalInside: BorderSide(color: Color(0xFFE2E8F0)),
+                      verticalInside: BorderSide(color: Color(0xFFE2E8F0)),
+                      top: BorderSide(color: Color(0xFFE2E8F0)),
+                      bottom: BorderSide(color: Color(0xFFE2E8F0)),
+                      left: BorderSide(color: Color(0xFFE2E8F0)),
+                      right: BorderSide(color: Color(0xFFE2E8F0)),
+                    ),
+                    columnWidths: const {0: FixedColumnWidth(120), 1: FlexColumnWidth()},
+                    children: [
+                      _detailRow('Last name', group.lastName),
+                      _detailRow('First name', group.firstName),
+                      _detailRow('Middle name', group.middleName),
+                      _detailRow('Birthdate', group.birthDate),
+                      _detailRow('Excel row', group.excelRowNumber.toString()),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.of(dialogContext).pop(), child: const Text('Close')),
+            if (studentMissing)
+              FilledButton.icon(
+                onPressed: _isBusy
+                    ? null
+                    : () {
+                        Navigator.of(dialogContext).pop();
+                        _openStudentProfileForm(group);
+                      },
+                icon: const Icon(Icons.person_add_alt_1_rounded, size: 18),
+                label: const Text('Create student profile'),
+              ),
+          ],
+        );
+      },
+    );
+  }
+
+  TableRow _detailRow(String label, String value) {
+    return TableRow(
+      children: [
+        _TinyHeader(label),
+        _TinyCell(value),
+      ],
+    );
+  }
+
+  Future<void> _createStudentProfileFromGroup(
+    _StudentGradeGroup group, {
+    String? studentId,
+    String? firstName,
+    String? middleName,
+    String? lastName,
+    String? yearLevel,
+    String? course,
+    String courseId = '',
+    String gender = '',
+    String birthDate = '',
+  }) async {
+    final finalStudentId = studentId?.trim().isNotEmpty == true ? studentId!.trim() : group.studentId.trim();
+    final finalFirstName = firstName?.trim().isNotEmpty == true ? firstName!.trim() : group.firstName.trim();
+    final finalMiddleName = middleName ?? group.middleName;
+    final finalLastName = lastName?.trim().isNotEmpty == true ? lastName!.trim() : group.lastName.trim();
+    final finalYearLevel = _normalizeYearLevelLabel(yearLevel ?? group.yearLevel);
+    final finalCourse = course?.trim().isNotEmpty == true ? course!.trim() : group.course.trim();
+
+    if (finalStudentId.isEmpty || finalFirstName.isEmpty || finalLastName.isEmpty) {
+      setState(() => _status = 'Cannot create student profile: Student ID, first name, and last name are required.');
+      return;
+    }
+
+    setState(() {
+      _isBusy = true;
+      _operationLabel = 'Creating student profile';
+      _operationDone = 0;
+      _operationTotal = 0;
+      _status = 'Creating $finalLastName, $finalFirstName in tbl_student...';
+    });
+
+    try {
+      final result = await _api.createStudentProfile(
+        studentId: finalStudentId,
+        firstName: finalFirstName,
+        middleName: finalMiddleName,
+        lastName: finalLastName,
+        courseId: courseId,
+        course: finalCourse,
+        yearLevel: finalYearLevel,
+        gender: gender,
+        birthDate: birthDate,
+      );
+
+      final courseCode = result.student['course_code']?.toString() ?? group.course;
+      for (final row in _rows) {
+        if (_rowGroupKey(row) == group.key) {
+          row.studentFound = true;
+          if (courseCode.trim().isNotEmpty) row.databaseCourse = courseCode;
+          row.message = '${result.message} Run Check again to refresh grade matching.';
+        }
+      }
+
+      setState(() {
+        _refreshDerivedData(resetPage: false);
+        _status = result.message;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _status = 'Create student profile failed: $error');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isBusy = false;
+          _operationLabel = '';
+          _operationDone = 0;
+          _operationTotal = 0;
+        });
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    if (!_isLoggedIn) return _buildLoginScaffold();
+
     final groups = _visibleGroups;
 
     return Scaffold(
-      bottomNavigationBar: _rows.isEmpty ? null : _buildStickyHorizontalScrollBar(),
+      bottomNavigationBar: _rows.isEmpty || groups.isEmpty ? null : _buildStickyHorizontalScrollBar(),
       body: SafeArea(
         child: SingleChildScrollView(
           padding: EdgeInsets.fromLTRB(_s(14), _s(14), _s(14), _rows.isEmpty ? _s(20) : _s(64)),
@@ -726,6 +1290,125 @@ class _GradesCheckerPageState extends State<GradesCheckerPage> {
                   _buildDataWorkspace(groups),
                   SizedBox(height: _s(20)),
                 ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLoginScaffold() {
+    final failed = _status.toLowerCase().contains('failed') ||
+        _status.toLowerCase().contains('invalid') ||
+        _status.toLowerCase().contains('required');
+
+    return Scaffold(
+      body: SafeArea(
+        child: Center(
+          child: SingleChildScrollView(
+            padding: EdgeInsets.all(_s(18)),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(maxWidth: _s(460)),
+              child: Card(
+                child: Padding(
+                  padding: EdgeInsets.all(_s(20)),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Row(
+                        children: [
+                          Container(
+                            width: _s(44),
+                            height: _s(40),
+                            decoration: BoxDecoration(
+                              gradient: const LinearGradient(
+                                colors: [Color(0xFF2563EB), Color(0xFF14B8A6)],
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                              ),
+                              borderRadius: BorderRadius.circular(_s(16)),
+                            ),
+                            child: const Icon(Icons.fact_check_rounded, color: Colors.white, size: 21),
+                          ),
+                          SizedBox(width: _s(12)),
+                          const Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text('UNO to SMS Grade Checker', style: TextStyle(fontSize: _kHeaderFontSize, fontWeight: FontWeight.w900)),
+                                SizedBox(height: 2),
+                                Text('Login using your SMS user account.', style: TextStyle(fontSize: _kBodyFontSize, color: Color(0xFF64748B))),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                      SizedBox(height: _s(18)),
+                      TextField(
+                        controller: _usernameController,
+                        enabled: !_loggingIn,
+                        textInputAction: TextInputAction.next,
+                        decoration: const InputDecoration(
+                          labelText: 'Username',
+                          prefixIcon: Icon(Icons.person_rounded, size: 18),
+                        ),
+                      ),
+                      SizedBox(height: _s(10)),
+                      TextField(
+                        controller: _passwordController,
+                        enabled: !_loggingIn,
+                        obscureText: _obscurePassword,
+                        onSubmitted: (_) => _loggingIn ? null : _login(),
+                        decoration: InputDecoration(
+                          labelText: 'Password',
+                          prefixIcon: const Icon(Icons.lock_rounded, size: 18),
+                          suffixIcon: IconButton(
+                            tooltip: _obscurePassword ? 'Show password' : 'Hide password',
+                            onPressed: _loggingIn ? null : () => setState(() => _obscurePassword = !_obscurePassword),
+                            icon: Icon(_obscurePassword ? Icons.visibility_rounded : Icons.visibility_off_rounded, size: 18),
+                          ),
+                        ),
+                      ),
+                      SizedBox(height: _s(12)),
+                      FilledButton.icon(
+                        onPressed: _loggingIn ? null : _login,
+                        icon: _loggingIn
+                            ? SizedBox(width: _s(16), height: _s(16), child: const CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                            : const Icon(Icons.login_rounded, size: 18),
+                        label: Text(_loggingIn ? 'Signing in...' : 'Login'),
+                        style: FilledButton.styleFrom(
+                          minimumSize: Size.fromHeight(_s(42)),
+                          textStyle: const TextStyle(fontSize: _kBodyFontSize, fontWeight: FontWeight.w800),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(_s(10))),
+                        ),
+                      ),
+                      SizedBox(height: _s(12)),
+                      Container(
+                        padding: EdgeInsets.all(_s(10)),
+                        decoration: BoxDecoration(
+                          color: failed ? const Color(0xFFFEF2F2) : const Color(0xFFEEF6FF),
+                          borderRadius: BorderRadius.circular(_s(12)),
+                          border: Border.all(color: failed ? const Color(0xFFFECACA) : const Color(0xFFBFDBFE)),
+                        ),
+                        child: Text(
+                          _status,
+                          style: TextStyle(
+                            fontSize: _kBodyFontSize,
+                            color: failed ? const Color(0xFF991B1B) : const Color(0xFF1E3A8A),
+                          ),
+                        ),
+                      ),
+                      SizedBox(height: _s(10)),
+                      TextButton.icon(
+                        onPressed: _loggingIn ? null : _openConnectionSettings,
+                        icon: const Icon(Icons.settings_rounded, size: 17),
+                        label: const Text('Connection settings'),
+                      ),
+                    ],
+                  ),
+                ),
               ),
             ),
           ),
@@ -771,6 +1454,31 @@ class _GradesCheckerPageState extends State<GradesCheckerPage> {
             child: _SoftPill(
               icon: Icons.calendar_month_rounded,
               label: _selectedPeriod?.label ?? (_loadingPeriods ? 'Loading academic years...' : 'No academic year selected'),
+            ),
+          ),
+        ),
+        SizedBox(width: _s(8)),
+        ConstrainedBox(
+          constraints: BoxConstraints(maxWidth: _s(220)),
+          child: SizedBox(
+            height: _s(36),
+            child: _SoftPill(
+              icon: Icons.person_rounded,
+              label: _authDisplayName.isNotEmpty ? _authDisplayName : _authUsername,
+            ),
+          ),
+        ),
+        SizedBox(width: _s(8)),
+        SizedBox(
+          height: _s(36),
+          child: OutlinedButton.icon(
+            onPressed: _logout,
+            icon: const Icon(Icons.logout_rounded, size: 18),
+            label: const Text('Logout'),
+            style: OutlinedButton.styleFrom(
+              padding: EdgeInsets.symmetric(horizontal: _s(14)),
+              textStyle: const TextStyle(fontSize: _kBodyFontSize, fontWeight: FontWeight.w800),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
             ),
           ),
         ),
@@ -1408,19 +2116,34 @@ class _GradesCheckerPageState extends State<GradesCheckerPage> {
       );
     }
 
-    return Scrollbar(
-      controller: _horizontalController,
-      thumbVisibility: true,
+    _queueHorizontalMetricSync();
+    return NotificationListener<ScrollNotification>(
+      onNotification: (notification) {
+        if (notification.metrics.axis == Axis.horizontal) {
+          _queueHorizontalMetricSync();
+        }
+        return false;
+      },
       child: SingleChildScrollView(
         controller: _horizontalController,
         scrollDirection: Axis.horizontal,
         padding: EdgeInsets.all(_s(8)),
-        child: RepaintBoundary(child: _StudentGradeTable(groups: groups, onSubjectTap: _openSubjectDetails)),
+        child: RepaintBoundary(child: _StudentGradeTable(groups: groups, onSubjectTap: _openSubjectDetails, onStudentTap: _handleStudentTap)),
       ),
     );
   }
 
   Widget _buildStickyHorizontalScrollBar() {
+    final max = _horizontalMaxExtent;
+    final offset = _horizontalPixels.clamp(0.0, max).toDouble();
+    final canScroll = max > 0.5;
+
+    void jumpTo(double next) {
+      if (!_horizontalController.hasClients || !canScroll) return;
+      _horizontalController.jumpTo(next.clamp(0.0, max).toDouble());
+      _queueHorizontalMetricSync();
+    }
+
     return SafeArea(
       top: false,
       child: Container(
@@ -1431,52 +2154,109 @@ class _GradesCheckerPageState extends State<GradesCheckerPage> {
           border: Border(top: BorderSide(color: Color(0xFFE2E8F0))),
           boxShadow: [BoxShadow(color: Color(0x12000000), blurRadius: 10, offset: Offset(0, -3))],
         ),
-        child: AnimatedBuilder(
-          animation: _horizontalController,
-          builder: (context, _) {
-            final hasClients = _horizontalController.hasClients;
-            final max = hasClients ? math.max(0.0, _horizontalController.position.maxScrollExtent) : 0.0;
-            final offset = hasClients ? _horizontalController.offset.clamp(0.0, max).toDouble() : 0.0;
-            final canScroll = max > 0.5;
-
-            void jumpTo(double next) {
-              if (!hasClients || !canScroll) return;
-              _horizontalController.jumpTo(next.clamp(0.0, max).toDouble());
-            }
-
-            return Row(
-              children: [
-                const Icon(Icons.swap_horiz_rounded, size: 16, color: Color(0xFF2563EB)),
-                SizedBox(width: _s(6)),
-                const Text('Horizontal', style: TextStyle(fontSize: _kTableFontSize, fontWeight: FontWeight.w900, color: Color(0xFF334155))),
-                SizedBox(width: _s(8)),
-                IconButton(
-                  tooltip: 'Scroll left',
-                  onPressed: !canScroll || offset <= 0 ? null : () => jumpTo(offset - 420),
-                  icon: const Icon(Icons.keyboard_arrow_left_rounded, size: 18),
-                  constraints: BoxConstraints.tightFor(width: _s(28), height: _s(28)),
-                  padding: EdgeInsets.zero,
-                ),
-                Expanded(
-                  child: Slider(
-                    value: canScroll ? offset : 0,
-                    min: 0,
-                    max: canScroll ? max : 1,
-                    onChanged: canScroll ? jumpTo : null,
-                  ),
-                ),
-                IconButton(
-                  tooltip: 'Scroll right',
-                  onPressed: !canScroll || offset >= max ? null : () => jumpTo(offset + 420),
-                  icon: const Icon(Icons.keyboard_arrow_right_rounded, size: 18),
-                  constraints: BoxConstraints.tightFor(width: _s(28), height: _s(28)),
-                  padding: EdgeInsets.zero,
-                ),
-              ],
-            );
-          },
+        child: Row(
+          children: [
+            const Icon(Icons.swap_horiz_rounded, size: 16, color: Color(0xFF2563EB)),
+            SizedBox(width: _s(8)),
+            IconButton(
+              tooltip: 'Scroll left',
+              onPressed: !canScroll || offset <= 0 ? null : () => jumpTo(offset - 420),
+              icon: const Icon(Icons.keyboard_arrow_left_rounded, size: 18),
+              constraints: BoxConstraints.tightFor(width: _s(28), height: _s(28)),
+              padding: EdgeInsets.zero,
+            ),
+            Expanded(
+              child: _RoundedHorizontalScrollControl(
+                offset: offset,
+                max: max,
+                viewport: _horizontalViewportDimension,
+                onChanged: jumpTo,
+              ),
+            ),
+            IconButton(
+              tooltip: 'Scroll right',
+              onPressed: !canScroll || offset >= max ? null : () => jumpTo(offset + 420),
+              icon: const Icon(Icons.keyboard_arrow_right_rounded, size: 18),
+              constraints: BoxConstraints.tightFor(width: _s(28), height: _s(28)),
+              padding: EdgeInsets.zero,
+            ),
+          ],
         ),
       ),
+    );
+  }
+}
+
+
+class _RoundedHorizontalScrollControl extends StatelessWidget {
+  const _RoundedHorizontalScrollControl({
+    required this.offset,
+    required this.max,
+    required this.viewport,
+    required this.onChanged,
+  });
+
+  final double offset;
+  final double max;
+  final double viewport;
+  final ValueChanged<double> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final trackWidth = math.max(1.0, constraints.maxWidth);
+        final canScroll = max > 0.5;
+        final totalContentWidth = math.max(viewport + max, 1.0);
+        final visibleRatio = viewport <= 0 ? 0.25 : (viewport / totalContentWidth).clamp(0.12, 1.0).toDouble();
+        final thumbWidth = canScroll ? math.max(_s(52), trackWidth * visibleRatio) : trackWidth;
+        final travel = math.max(0.0, trackWidth - thumbWidth);
+        final thumbLeft = canScroll && max > 0 ? (offset / max).clamp(0.0, 1.0).toDouble() * travel : 0.0;
+
+        double offsetFromLocalDx(double dx) {
+          if (!canScroll || travel <= 0) return 0;
+          final ratio = ((dx - (thumbWidth / 2)) / travel).clamp(0.0, 1.0).toDouble();
+          return ratio * max;
+        }
+
+        return GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTapDown: canScroll ? (details) => onChanged(offsetFromLocalDx(details.localPosition.dx)) : null,
+          onHorizontalDragUpdate: canScroll
+              ? (details) {
+                  if (travel <= 0) return;
+                  onChanged(offset + (details.delta.dx / travel) * max);
+                }
+              : null,
+          child: SizedBox(
+            height: _s(24),
+            child: Stack(
+              alignment: Alignment.centerLeft,
+              children: [
+                Container(
+                  height: _s(10),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFE2E8F0),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                ),
+                Positioned(
+                  left: thumbLeft,
+                  child: Container(
+                    width: thumbWidth,
+                    height: _s(14),
+                    decoration: BoxDecoration(
+                      color: canScroll ? const Color(0xFF2563EB) : const Color(0xFFCBD5E1),
+                      borderRadius: BorderRadius.circular(_s(7)),
+                      boxShadow: const [BoxShadow(color: Color(0x1A000000), blurRadius: 6, offset: Offset(0, 1))],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 }
@@ -1491,6 +2271,7 @@ class _StudentGradeGroup {
     required this.studentName,
     required this.course,
     required this.yearLevel,
+    required this.birthDate,
     required this.excelRowNumber,
     required this.rows,
   });
@@ -1503,6 +2284,7 @@ class _StudentGradeGroup {
   final String studentName;
   final String course;
   final String yearLevel;
+  final String birthDate;
   final int excelRowNumber;
   final List<GradeRow> rows;
 
@@ -1544,6 +2326,7 @@ class _StudentGradeGroup {
       'student_name': studentName,
       'course': course,
       'year_level': yearLevel,
+      'birthdate': birthDate,
       'excel_row_number': excelRowNumber,
       'subjects': subjects,
     };
@@ -1551,12 +2334,13 @@ class _StudentGradeGroup {
 }
 
 class _StudentGradeTable extends StatelessWidget {
-  const _StudentGradeTable({required this.groups, required this.onSubjectTap});
+  const _StudentGradeTable({required this.groups, required this.onSubjectTap, required this.onStudentTap});
 
   final List<_StudentGradeGroup> groups;
   final void Function(GradeRow row) onSubjectTap;
+  final void Function(_StudentGradeGroup group) onStudentTap;
 
-  static double get tableWidth => _s(258) + _s(112) + (_s(145) * 10);
+  static double get tableWidth => _s(258) + _s(174) + (_s(145) * 10);
 
   @override
   Widget build(BuildContext context) {
@@ -1586,7 +2370,7 @@ class _StudentGradeTable extends StatelessWidget {
             TableRow(
               decoration: BoxDecoration(color: groupIndex.isEven ? Colors.white : const Color(0xFFFBFDFF)),
               children: [
-                _studentCell(groups[groupIndex]),
+                _studentCell(groups[groupIndex], onStudentTap),
                 _courseCell(groups[groupIndex]),
                 for (var i = 1; i <= 10; i++) _subjectCell(groups[groupIndex].rowForSubjectNo(i), onSubjectTap),
               ],
@@ -1599,7 +2383,7 @@ class _StudentGradeTable extends StatelessWidget {
   static Map<int, TableColumnWidth> _columnWidths() {
     return {
       0: FixedColumnWidth(_s(250)),
-      1: FixedColumnWidth(_s(104)),
+      1: FixedColumnWidth(_s(166)),
       for (var i = 2; i <= 11; i++) i: FixedColumnWidth(_s(137)),
     };
   }
@@ -1613,12 +2397,17 @@ class _StudentGradeTable extends StatelessWidget {
     );
   }
 
-  static Widget _studentCell(_StudentGradeGroup group) {
+  static Widget _studentCell(_StudentGradeGroup group, void Function(_StudentGradeGroup group) onStudentTap) {
     final visual = group.visual;
-    return Container(
-      constraints: BoxConstraints(minHeight: _s(72)),
-      padding: EdgeInsets.all(_s(7)),
-      child: Row(
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () => onStudentTap(group),
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        child: Container(
+          constraints: BoxConstraints(minHeight: _s(72)),
+          padding: EdgeInsets.all(_s(7)),
+          child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(width: _s(5), height: _s(52), decoration: BoxDecoration(color: visual.color, borderRadius: BorderRadius.circular(99))),
@@ -1646,6 +2435,8 @@ class _StudentGradeTable extends StatelessWidget {
             ),
           ),
         ],
+          ),
+        ),
       ),
     );
   }
@@ -1659,7 +2450,7 @@ class _StudentGradeTable extends StatelessWidget {
         children: [
           const Text('Course', style: TextStyle(fontSize: _kTableFontSize, color: Color(0xFF94A3B8), fontWeight: FontWeight.w900)),
           SizedBox(height: _s(2)),
-          Text(group.course.isEmpty ? '-' : group.course, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: _kTableFontSize)),
+          Text(group.course.isEmpty ? '-' : group.course, maxLines: 3, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: _kTableFontSize)),
           SizedBox(height: _s(8)),
           const Text('Year', style: TextStyle(fontSize: _kTableFontSize, color: Color(0xFF94A3B8), fontWeight: FontWeight.w900)),
           SizedBox(height: _s(2)),
@@ -1672,7 +2463,7 @@ class _StudentGradeTable extends StatelessWidget {
   static Widget _subjectCell(GradeRow? row, void Function(GradeRow row) onSubjectTap) {
     if (row == null) {
       return Container(
-        constraints: BoxConstraints(minHeight: _s(70)),
+        constraints: BoxConstraints(minHeight: _s(82)),
         padding: EdgeInsets.all(_s(6)),
         alignment: Alignment.center,
         child: const Text('-', style: TextStyle(color: Color(0xFFCBD5E1), fontWeight: FontWeight.w900)),
@@ -1686,7 +2477,7 @@ class _StudentGradeTable extends StatelessWidget {
       child: MouseRegion(
         cursor: SystemMouseCursors.click,
         child: Container(
-          constraints: BoxConstraints(minHeight: _s(70)),
+          constraints: BoxConstraints(minHeight: _s(82)),
           padding: EdgeInsets.all(_s(5)),
           child: DecoratedBox(
             decoration: BoxDecoration(
@@ -1710,6 +2501,10 @@ class _StudentGradeTable extends StatelessWidget {
                         Icon(Icons.control_point_duplicate_rounded, color: _StatusVisual.duplicate.color, size: 13),
                     ],
                   ),
+                  if (row.excelSubjectDescription.trim().isNotEmpty) ...[
+                    SizedBox(height: _s(3)),
+                    Text('Desc: ${row.excelSubjectDescription}', maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: _kTableFontSize, color: Color(0xFF475569), fontWeight: FontWeight.w800)),
+                  ],
                   SizedBox(height: _s(3)),
                   _SubjectLine(label: 'G', excel: row.excelGrade, db: row.databaseGrade, warn: row.gradeMatches == false),
                   SizedBox(height: _s(1)),
@@ -1785,6 +2580,53 @@ class _PagerButtons extends StatelessWidget {
           constraints: const BoxConstraints.tightFor(width: 28, height: 28),
           padding: EdgeInsets.zero,
         ),
+      ],
+    );
+  }
+}
+
+
+class _SubjectCatalogTable extends StatelessWidget {
+  const _SubjectCatalogTable({required this.subjects});
+
+  final List<SubjectCatalogRecord> subjects;
+
+  @override
+  Widget build(BuildContext context) {
+    return Table(
+      border: const TableBorder(
+        horizontalInside: BorderSide(color: Color(0xFFE2E8F0)),
+        verticalInside: BorderSide(color: Color(0xFFE2E8F0)),
+        top: BorderSide(color: Color(0xFFE2E8F0)),
+        bottom: BorderSide(color: Color(0xFFE2E8F0)),
+        left: BorderSide(color: Color(0xFFE2E8F0)),
+        right: BorderSide(color: Color(0xFFE2E8F0)),
+      ),
+      columnWidths: const {
+        0: FixedColumnWidth(70),
+        1: FixedColumnWidth(110),
+        2: FlexColumnWidth(),
+        3: FixedColumnWidth(70),
+      },
+      children: [
+        const TableRow(
+          decoration: BoxDecoration(color: Color(0xFFF1F5F9)),
+          children: [
+            _TinyHeader('ID'),
+            _TinyHeader('Code'),
+            _TinyHeader('Description'),
+            _TinyHeader('Units'),
+          ],
+        ),
+        for (final subject in subjects)
+          TableRow(
+            children: [
+              _TinyCell(subject.subjectId),
+              _TinyCell(subject.subjectCode),
+              _TinyCell(subject.subjectDescription),
+              _TinyCell(subject.subjectUnits),
+            ],
+          ),
       ],
     );
   }

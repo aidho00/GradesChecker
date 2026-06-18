@@ -7,10 +7,72 @@ import 'package:http/http.dart' as http;
 import '../models/grade_period.dart';
 import '../models/grade_row.dart';
 
+class GradeCheckerAuthSession {
+  const GradeCheckerAuthSession({
+    required this.token,
+    required this.username,
+    required this.displayName,
+    required this.role,
+  });
+
+  final String token;
+  final String username;
+  final String displayName;
+  final String role;
+}
+
+
+class CreateStudentProfileResult {
+  const CreateStudentProfileResult({
+    required this.created,
+    required this.message,
+    required this.student,
+  });
+
+  final bool created;
+  final String message;
+  final Map<String, dynamic> student;
+}
+
+
+class CourseOption {
+  const CourseOption({
+    required this.id,
+    required this.code,
+    required this.name,
+    required this.major,
+    required this.status,
+  });
+
+  final String id;
+  final String code;
+  final String name;
+  final String major;
+  final String status;
+
+  String get displayLabel {
+    final parts = <String>[];
+    if (code.trim().isNotEmpty) parts.add(code.trim());
+    if (name.trim().isNotEmpty) parts.add(name.trim());
+    return parts.isEmpty ? 'Course #$id' : parts.join(' - ');
+  }
+
+  factory CourseOption.fromJson(Map<String, dynamic> json) {
+    return CourseOption(
+      id: json['course_id']?.toString() ?? '',
+      code: json['course_code']?.toString() ?? '',
+      name: json['course_name']?.toString() ?? '',
+      major: json['course_major']?.toString() ?? '',
+      status: json['course_status']?.toString() ?? '',
+    );
+  }
+}
+
 class GradeCheckApi {
-  GradeCheckApi({required this.endpointUrl});
+  GradeCheckApi({required this.endpointUrl, this.authToken});
 
   final String endpointUrl;
+  final String? authToken;
 
   Uri get _checkUri => Uri.parse(endpointUrl);
 
@@ -20,6 +82,83 @@ class GradeCheckApi {
 
   Uri get exportExcelUri => _siblingUri('export_excel.php');
 
+  Uri get loginUri => _siblingUri('login.php');
+
+  Uri get createStudentProfileUri => _siblingUri('create_student_profile.php');
+
+  Uri get coursesUri => _siblingUri('courses.php');
+
+
+
+  Map<String, String> get _jsonHeaders {
+    final headers = <String, String>{
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+    };
+    final token = authToken?.trim();
+    if (token != null && token.isNotEmpty) {
+      headers['Authorization'] = 'Bearer $token';
+    }
+    return headers;
+  }
+
+  Map<String, String> get _acceptJsonHeaders {
+    final headers = <String, String>{'Accept': 'application/json'};
+    final token = authToken?.trim();
+    if (token != null && token.isNotEmpty) {
+      headers['Authorization'] = 'Bearer $token';
+    }
+    return headers;
+  }
+
+  Map<String, String> get _exportHeaders {
+    final headers = <String, String>{
+      'Content-Type': 'application/json',
+      'Accept': 'application/vnd.ms-excel',
+    };
+    final token = authToken?.trim();
+    if (token != null && token.isNotEmpty) {
+      headers['Authorization'] = 'Bearer $token';
+    }
+    return headers;
+  }
+
+  Future<GradeCheckerAuthSession> login({required String username, required String password}) async {
+    final response = await http
+        .post(
+          loginUri,
+          headers: const {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+          },
+          body: jsonEncode({
+            'username': username,
+            'password': password,
+          }),
+        )
+        .timeout(const Duration(seconds: 30));
+
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw Exception('Login failed: ${response.body}');
+    }
+
+    final decoded = jsonDecode(response.body) as Map<String, dynamic>;
+    if (decoded['ok'] != true) {
+      throw Exception(decoded['message']?.toString() ?? 'Login failed.');
+    }
+
+    final user = decoded['user'] as Map<String, dynamic>? ?? <String, dynamic>{};
+    final token = decoded['token']?.toString() ?? '';
+    if (token.isEmpty) throw Exception('Login did not return an access token.');
+
+    return GradeCheckerAuthSession(
+      token: token,
+      username: user['username']?.toString() ?? username,
+      displayName: user['display_name']?.toString() ?? username,
+      role: user['role']?.toString() ?? 'user',
+    );
+  }
+
   Uri _siblingUri(String fileName) {
     final uri = _checkUri;
     final segments = uri.pathSegments.toList();
@@ -28,6 +167,24 @@ class GradeCheckApi {
       return uri.replace(pathSegments: segments);
     }
     return uri.replace(path: '/grades_checker_api/$fileName');
+  }
+
+  Exception _apiError(int status, String body, {String fallback = 'API error'}) {
+    try {
+      final decoded = jsonDecode(body);
+      if (decoded is Map<String, dynamic>) {
+        final rawMessage = decoded['message']?.toString();
+        final rawExpectedFormat = decoded['expected_format']?.toString();
+        final message = rawMessage?.trim();
+        final expectedFormat = rawExpectedFormat?.trim();
+        if (message != null && message.isNotEmpty) {
+          return Exception(expectedFormat == null || expectedFormat.isEmpty ? message : '$message Expected: $expectedFormat');
+        }
+      }
+    } catch (_) {
+      // Keep the raw body below when the API did not return JSON.
+    }
+    return Exception('$fallback $status: $body');
   }
 
 
@@ -49,6 +206,10 @@ class GradeCheckApi {
 
     request.open('POST', parseExcelUri.toString());
     request.setRequestHeader('Accept', 'application/json');
+    final token = authToken?.trim();
+    if (token != null && token.isNotEmpty) {
+      request.setRequestHeader('Authorization', 'Bearer $token');
+    }
 
     request.upload.onProgress.listen((event) {
       final int totalBytes = event.lengthComputable
@@ -67,7 +228,7 @@ class GradeCheckApi {
         final int status = request.status ?? 0;
         final body = request.responseText ?? '';
         if (status < 200 || status >= 300) {
-          throw Exception('API error $status: $body');
+          throw _apiError(status, body);
         }
         final decoded = jsonDecode(body) as Map<String, dynamic>;
         if (decoded['ok'] != true) {
@@ -115,6 +276,7 @@ class GradeCheckApi {
     required String periodId,
   }) async {
     final request = http.MultipartRequest('POST', parseExcelUri)
+      ..headers.addAll(_acceptJsonHeaders)
       ..fields['school_year'] = schoolYear
       ..fields['semester'] = semester
       ..fields['period_id'] = periodId
@@ -124,7 +286,7 @@ class GradeCheckApi {
     final body = await streamed.stream.bytesToString();
 
     if (streamed.statusCode < 200 || streamed.statusCode >= 300) {
-      throw Exception('API error ${streamed.statusCode}: $body');
+      throw _apiError(streamed.statusCode, body);
     }
 
     final decoded = jsonDecode(body) as Map<String, dynamic>;
@@ -147,6 +309,7 @@ class GradeCheckApi {
     required String periodId,
   }) async {
     final request = http.MultipartRequest('POST', parseExcelUri)
+      ..headers.addAll(_acceptJsonHeaders)
       ..fields['school_year'] = schoolYear
       ..fields['semester'] = semester
       ..fields['period_id'] = periodId
@@ -156,7 +319,7 @@ class GradeCheckApi {
     final body = await streamed.stream.bytesToString();
 
     if (streamed.statusCode < 200 || streamed.statusCode >= 300) {
-      throw Exception('API error ${streamed.statusCode}: $body');
+      throw _apiError(streamed.statusCode, body);
     }
 
     final decoded = jsonDecode(body) as Map<String, dynamic>;
@@ -181,10 +344,7 @@ class GradeCheckApi {
     final response = await http
         .post(
           exportExcelUri,
-          headers: const {
-            'Content-Type': 'application/json',
-            'Accept': 'application/vnd.ms-excel',
-          },
+          headers: _exportHeaders,
           body: jsonEncode({
             'period_label': periodLabel,
             'source_file': fileName,
@@ -196,7 +356,7 @@ class GradeCheckApi {
         .timeout(const Duration(minutes: 4));
 
     if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw Exception('API error ${response.statusCode}: ${response.body}');
+      throw _apiError(response.statusCode, response.body);
     }
 
     return response.bodyBytes;
@@ -220,11 +380,11 @@ class GradeCheckApi {
 
   Future<List<GradePeriod>> fetchPeriods() async {
     final response = await http
-        .get(periodsUri, headers: const {'Accept': 'application/json'})
+        .get(periodsUri, headers: _acceptJsonHeaders)
         .timeout(const Duration(seconds: 30));
 
     if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw Exception('API error ${response.statusCode}: ${response.body}');
+      throw _apiError(response.statusCode, response.body);
     }
 
     final decoded = jsonDecode(response.body) as Map<String, dynamic>;
@@ -237,6 +397,76 @@ class GradeCheckApi {
         .map(GradePeriod.fromJson)
         .where((period) => period.id.isNotEmpty && _isAllowedSmsSemester(period.semester))
         .toList();
+  }
+
+
+
+  Future<List<CourseOption>> fetchCourses() async {
+    final response = await http
+        .get(coursesUri, headers: _acceptJsonHeaders)
+        .timeout(const Duration(seconds: 30));
+
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw _apiError(response.statusCode, response.body);
+    }
+
+    final decoded = jsonDecode(response.body) as Map<String, dynamic>;
+    if (decoded['ok'] != true) {
+      throw Exception(decoded['message']?.toString() ?? 'Unable to load courses.');
+    }
+
+    return (decoded['courses'] as List<dynamic>? ?? [])
+        .whereType<Map<String, dynamic>>()
+        .map(CourseOption.fromJson)
+        .where((course) => course.id.isNotEmpty)
+        .toList(growable: false);
+  }
+
+  Future<CreateStudentProfileResult> createStudentProfile({
+    required String studentId,
+    required String firstName,
+    required String middleName,
+    required String lastName,
+    String courseId = '',
+    required String course,
+    required String yearLevel,
+    String gender = '',
+    String birthDate = '',
+  }) async {
+    final response = await http
+        .post(
+          createStudentProfileUri,
+          headers: _jsonHeaders,
+          body: jsonEncode({
+            'student_id': studentId,
+            'first_name': firstName,
+            'middle_name': middleName,
+            'last_name': lastName,
+            'course_id': courseId,
+            'course': course,
+            'year_level': yearLevel,
+            'gender': gender,
+            'birthdate': birthDate,
+          }),
+        )
+        .timeout(const Duration(seconds: 45));
+
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw _apiError(response.statusCode, response.body);
+    }
+
+    final decoded = jsonDecode(response.body) as Map<String, dynamic>;
+    if (decoded['ok'] != true) {
+      throw Exception(decoded['message']?.toString() ?? 'Unable to create student profile.');
+    }
+
+    return CreateStudentProfileResult(
+      created: decoded['created'] == true,
+      message: decoded['message']?.toString() ?? 'Student profile saved.',
+      student: decoded['student'] is Map<String, dynamic>
+          ? decoded['student'] as Map<String, dynamic>
+          : <String, dynamic>{},
+    );
   }
 
   Future<List<GradeRow>> checkRows({
@@ -256,10 +486,7 @@ class GradeCheckApi {
       final response = await http
           .post(
             _checkUri,
-            headers: const {
-              'Content-Type': 'application/json',
-              'Accept': 'application/json',
-            },
+            headers: _jsonHeaders,
             body: jsonEncode({
               'period_id': periodId,
               'rows': chunk.map((row) => row.toApiJson()).toList(),

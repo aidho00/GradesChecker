@@ -1,5 +1,7 @@
 <?php
 require_once __DIR__ . '/bootstrap.php';
+require_once __DIR__ . '/auth.php';
+require_grade_checker_auth();
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     json_response(['ok' => false, 'message' => 'POST request required.'], 405);
@@ -190,6 +192,13 @@ try {
     $fileName = (string) ($_FILES['excel']['name'] ?? 'uploaded.xlsx');
     $tmpPath = $_FILES['excel']['tmp_name'];
 
+    if (!preg_match('/\.xlsx$/i', $fileName)) {
+        json_response([
+            'ok' => false,
+            'message' => 'Invalid file type. Please upload the original UNO promotional-list Excel file in .xlsx format.',
+        ], 400);
+    }
+
     $zipEntries = zip_read_entries($tmpPath);
     $sharedStrings = xlsx_shared_strings($zipEntries);
     $sheetPath = xlsx_first_sheet_path($zipEntries);
@@ -223,15 +232,43 @@ try {
             $firstNameIndex = $headers[xlsx_normalize_header('FIRST NAME')] ?? null;
             $middleNameIndex = $headers[xlsx_normalize_header('MIDDLE NAME')] ?? null;
             $courseIndex = $headers[xlsx_normalize_header('COURSE')] ?? null;
-            $yearLevelIndex = $headers[xlsx_normalize_header('YEARLEVEL')] ?? null;
+            $yearLevelIndex = $headers[xlsx_normalize_header('YEARLEVEL')] ?? ($headers[xlsx_normalize_header('YEAR LEVEL')] ?? null);
+            $birthDateIndex = $headers[xlsx_normalize_header('BIRTHDATE')] ?? ($headers[xlsx_normalize_header('BIRTH DATE')] ?? ($headers[xlsx_normalize_header('DOB')] ?? null));
             for ($i = 1; $i <= 10; $i++) {
                 $subjectSlots[] = [
                     'subject_no' => $i,
                     'subject_index' => $headers[xlsx_normalize_header('SUBJECT' . $i)] ?? null,
+                    'description_index' => $headers[xlsx_normalize_header('SUBJECTDESC' . $i)] ?? ($headers[xlsx_normalize_header('SUBJECT DESCRIPTION' . $i)] ?? null),
                     'units_index' => $headers[xlsx_normalize_header('UNITS' . $i)] ?? null,
                     'grade_index' => $headers[xlsx_normalize_header('GRADE' . $i)] ?? null,
                 ];
             }
+
+            $missingHeaders = [];
+            if ($idIndex === null) $missingHeaders[] = 'ID';
+            if ($lastNameIndex === null) $missingHeaders[] = 'LAST NAME';
+            if ($firstNameIndex === null) $missingHeaders[] = 'FIRST NAME';
+            if ($courseIndex === null) $missingHeaders[] = 'COURSE';
+            if ($yearLevelIndex === null) $missingHeaders[] = 'YEARLEVEL';
+
+            $completeSubjectSlots = 0;
+            foreach ($subjectSlots as $slot) {
+                if ($slot['subject_index'] !== null && $slot['units_index'] !== null && $slot['grade_index'] !== null) {
+                    $completeSubjectSlots++;
+                }
+            }
+            if ($completeSubjectSlots === 0) {
+                $missingHeaders[] = 'SUBJECT1 / UNITS1 / GRADE1';
+            }
+
+            if (!empty($missingHeaders)) {
+                json_response([
+                    'ok' => false,
+                    'message' => 'The uploaded Excel file does not look like the UNO promotional-list format. Missing required column(s): ' . implode(', ', $missingHeaders) . '.',
+                    'expected_format' => 'ID, LAST NAME, FIRST NAME, COURSE, YEARLEVEL, optional BIRTHDATE, then SUBJECT1/SUBJECTDESC1/UNITS1/GRADE1 up to SUBJECT10/SUBJECTDESC10/UNITS10/GRADE10.',
+                ], 400);
+            }
+
             $headerRead = true;
             continue;
         }
@@ -245,6 +282,7 @@ try {
         $middleName = xlsx_from_index($values, $middleNameIndex);
         $course = xlsx_from_index($values, $courseIndex);
         $yearLevel = xlsx_from_index($values, $yearLevelIndex);
+        $birthDate = xlsx_from_index($values, $birthDateIndex);
 
         foreach ($subjectSlots as $slot) {
             $subject = xlsx_from_index($values, $slot['subject_index']);
@@ -258,7 +296,9 @@ try {
                 'middle_name' => $middleName,
                 'course' => $course,
                 'year_level' => $yearLevel,
+                'birthdate' => $birthDate,
                 'subject_code' => $subject,
+                'subject_description' => xlsx_from_index($values, $slot['description_index']),
                 'units' => xlsx_from_index($values, $slot['units_index']),
                 'excel_grade' => xlsx_from_index($values, $slot['grade_index']),
                 'school_year' => $schoolYear,
@@ -268,11 +308,19 @@ try {
         }
     }
 
+    if ($studentRows === 0 || count($parsed) === 0) {
+        json_response([
+            'ok' => false,
+            'message' => 'The Excel file was opened, but no UNO student subject-grade rows were found. Please verify that the first worksheet is the promotional list and that it contains ID and SUBJECT/UNITS/GRADE columns.',
+        ], 400);
+    }
+
     json_response([
         'ok' => true,
         'file_name' => $fileName,
         'student_rows' => $studentRows,
         'record_count' => count($parsed),
+        'validated_format' => 'uno_promotional_list',
         'rows' => $parsed,
         'parser' => 'server_pure_php_zip_xml',
     ]);

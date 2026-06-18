@@ -1,5 +1,7 @@
 <?php
 require_once __DIR__ . '/bootstrap.php';
+require_once __DIR__ . '/auth.php';
+require_grade_checker_auth();
 
 if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
     json_response(['ok' => false, 'message' => 'GET request required.'], 405);

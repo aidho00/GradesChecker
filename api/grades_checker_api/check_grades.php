@@ -1,5 +1,7 @@
 <?php
 require_once __DIR__ . '/bootstrap.php';
+require_once __DIR__ . '/auth.php';
+require_grade_checker_auth();
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     json_response(['ok' => false, 'message' => 'POST request required.'], 405);
@@ -58,6 +60,54 @@ function grade_records_payload(array $grades): array
         ];
     }
     return $out;
+}
+
+function subject_records_payload(array $subjects): array
+{
+    $out = [];
+    $seen = [];
+    foreach ($subjects as $subject) {
+        if (!is_array($subject)) continue;
+        $id = (string) ($subject['subject_id'] ?? '');
+        if ($id !== '' && isset($seen[$id])) continue;
+        if ($id !== '') $seen[$id] = true;
+        $out[] = [
+            'subject_id' => $subject['subject_id'] ?? '',
+            'subject_code' => $subject['subject_code'] ?? '',
+            'subject_description' => $subject['subject_description'] ?? '',
+            'subject_units' => $subject['subject_units'] ?? '',
+        ];
+    }
+    return $out;
+}
+
+
+function subject_match_score(array $subject, string $excelDescription, string $excelUnits): int
+{
+    $score = 0;
+    $dbDescription = normalize_value($subject['subject_description'] ?? '');
+    $excelDesc = normalize_value($excelDescription);
+    if ($excelDesc !== '' && $dbDescription !== '') {
+        if ($dbDescription === $excelDesc) {
+            $score += 100;
+        } elseif (str_contains($dbDescription, $excelDesc) || str_contains($excelDesc, $dbDescription)) {
+            $score += 50;
+        }
+    }
+    $dbUnits = normalize_grade($subject['subject_units'] ?? '');
+    $excelUnitsNorm = normalize_grade($excelUnits);
+    if ($excelUnitsNorm !== '' && $dbUnits !== '' && $excelUnitsNorm === $dbUnits) {
+        $score += 25;
+    }
+    return $score;
+}
+
+function rank_subject_variants(array $subjects, string $excelDescription, string $excelUnits): array
+{
+    usort($subjects, function (array $a, array $b) use ($excelDescription, $excelUnits): int {
+        return subject_match_score($b, $excelDescription, $excelUnits) <=> subject_match_score($a, $excelDescription, $excelUnits);
+    });
+    return $subjects;
 }
 
 function choose_best_grade(array $grades, string $excelGrade): ?array
@@ -172,7 +222,7 @@ try {
         $stmt->execute($subjectKeys);
         foreach ($stmt->fetchAll() as $subject) {
             $key = clean_key($subject['subject_code'] ?? '');
-            if (!isset($subjectsByCode[$key])) $subjectsByCode[$key] = $subject;
+            $subjectsByCode[$key][] = $subject;
         }
     }
 
@@ -189,6 +239,8 @@ try {
         $firstName = trim((string) ($row['first_name'] ?? ''));
         $lastName = trim((string) ($row['last_name'] ?? ''));
         $subjectCode = trim((string) ($row['subject_code'] ?? ''));
+        $excelSubjectDescription = trim((string) ($row['subject_description'] ?? ''));
+        $excelUnits = trim((string) ($row['units'] ?? ''));
 
         $student = null;
         if ($studentId !== '') {
@@ -198,12 +250,21 @@ try {
             $student = $studentsByName[clean_key($firstName . '|' . $lastName)] ?? null;
         }
 
-        $subject = $subjectsByCode[clean_key($subjectCode)] ?? null;
-        $resolvedRows[$index] = ['row' => $row, 'student' => $student, 'subject' => $subject, 'invalid' => false];
+        $subjectVariants = rank_subject_variants($subjectsByCode[clean_key($subjectCode)] ?? [], $excelSubjectDescription, $excelUnits);
+        $subject = $subjectVariants[0] ?? null;
+        $resolvedRows[$index] = [
+            'row' => $row,
+            'student' => $student,
+            'subject' => $subject,
+            'subjects' => $subjectVariants,
+            'invalid' => false,
+        ];
 
-        if ($student && $subject) {
+        if ($student && !empty($subjectVariants)) {
             $resolvedStudentIds[] = (string) $student['s_id_no'];
-            $resolvedSubjectIds[] = (string) $subject['subject_id'];
+            foreach ($subjectVariants as $variant) {
+                $resolvedSubjectIds[] = (string) ($variant['subject_id'] ?? '');
+            }
         }
     }
 
@@ -268,12 +329,15 @@ try {
                 'message' => 'Invalid row payload.',
                 'matching_grades' => [],
                 'other_period_grades' => [],
+                'subject_variants' => [],
             ];
             continue;
         }
 
         $row = $resolved['row'];
         $student = $resolved['student'];
+        $subjectVariants = is_array($resolved['subjects'] ?? null) ? $resolved['subjects'] : [];
+        $subjectVariantPayload = subject_records_payload($subjectVariants);
         $subject = $resolved['subject'];
         $excelGrade = trim((string) ($row['excel_grade'] ?? ''));
         $excelUnits = trim((string) ($row['units'] ?? ''));
@@ -293,6 +357,7 @@ try {
                 'message' => 'No student matched by ID or first/last name.',
                 'matching_grades' => [],
                 'other_period_grades' => [],
+                'subject_variants' => $subjectVariantPayload,
             ];
             continue;
         }
@@ -312,15 +377,42 @@ try {
                 'message' => 'Student found, but subject code was not found in tbl_subject.',
                 'matching_grades' => [],
                 'other_period_grades' => [],
+                'subject_variants' => $subjectVariantPayload,
             ];
             continue;
         }
 
-        $otherKey = clean_key(($student['s_id_no'] ?? '') . '|' . ($subject['subject_id'] ?? ''));
-        $otherGradeMatchesList = $otherGradesByKey[$otherKey] ?? [];
-        $gradeKey = clean_key(($student['s_id_no'] ?? '') . '|' . ($subject['subject_id'] ?? '') . '|' . $periodId);
-        $gradeMatchesList = $gradesByKey[$gradeKey] ?? [];
+        $subjectIdsForRow = [];
+        foreach ($subjectVariants as $variant) {
+            $variantId = trim((string) ($variant['subject_id'] ?? ''));
+            if ($variantId !== '') $subjectIdsForRow[] = $variantId;
+        }
+        $subjectIdsForRow = unique_non_empty($subjectIdsForRow);
+
+        $otherGradeMatchesList = [];
+        $gradeMatchesList = [];
+        foreach ($subjectIdsForRow as $subjectIdForRow) {
+            $otherKey = clean_key(($student['s_id_no'] ?? '') . '|' . $subjectIdForRow);
+            foreach (($otherGradesByKey[$otherKey] ?? []) as $otherGrade) {
+                $otherGradeMatchesList[] = $otherGrade;
+            }
+
+            $gradeKey = clean_key(($student['s_id_no'] ?? '') . '|' . $subjectIdForRow . '|' . $periodId);
+            foreach (($gradesByKey[$gradeKey] ?? []) as $matchGrade) {
+                $gradeMatchesList[] = $matchGrade;
+            }
+        }
+
         $grade = choose_best_grade($gradeMatchesList, $excelGrade);
+        if ($grade) {
+            foreach ($subjectVariants as $variant) {
+                if ((string) ($variant['subject_id'] ?? '') === (string) ($grade['sg_subject_id'] ?? '')) {
+                    $subject = $variant;
+                    break;
+                }
+            }
+        }
+
         if (!$grade) {
             $results[] = [
                 'exists' => false,
@@ -337,6 +429,7 @@ try {
                 'message' => 'Student and subject exist, but no grade record exists for the selected period.' . (count($otherGradeMatchesList) > 0 ? ' Grade record exists in other period(s).' : ''),
                 'matching_grades' => [],
                 'other_period_grades' => grade_records_payload($otherGradeMatchesList),
+                'subject_variants' => $subjectVariantPayload,
             ];
             continue;
         }
@@ -379,6 +472,7 @@ try {
             'message' => implode(' and ', $messages) . (count($gradeMatchesList) > 1 ? ' Multiple grade records found for this subject.' : '.') . (count($otherGradeMatchesList) > 0 ? ' Other-period grade record(s) also exist.' : ''),
             'matching_grades' => grade_records_payload($gradeMatchesList),
             'other_period_grades' => grade_records_payload($otherGradeMatchesList),
+            'subject_variants' => $subjectVariantPayload,
         ];
     }
 

@@ -54,6 +54,39 @@ class DatabaseGradeRecord {
   }
 }
 
+
+class SubjectCatalogRecord {
+  const SubjectCatalogRecord({
+    required this.subjectId,
+    required this.subjectCode,
+    required this.subjectDescription,
+    required this.subjectUnits,
+  });
+
+  final String subjectId;
+  final String subjectCode;
+  final String subjectDescription;
+  final String subjectUnits;
+
+  factory SubjectCatalogRecord.fromJson(Map<String, dynamic> json) {
+    return SubjectCatalogRecord(
+      subjectId: json['subject_id']?.toString() ?? '',
+      subjectCode: json['subject_code']?.toString() ?? '',
+      subjectDescription: json['subject_description']?.toString() ?? '',
+      subjectUnits: json['subject_units']?.toString() ?? '',
+    );
+  }
+
+  Map<String, dynamic> toExportJson() {
+    return {
+      'subject_id': subjectId,
+      'subject_code': subjectCode,
+      'subject_description': subjectDescription,
+      'subject_units': subjectUnits,
+    };
+  }
+}
+
 class GradeRow {
   GradeRow({
     required this.excelRowNumber,
@@ -65,6 +98,8 @@ class GradeRow {
     required this.course,
     required this.yearLevel,
     required this.subjectCode,
+    this.excelSubjectDescription = '',
+    this.birthDate = '',
     required this.units,
     required this.excelGrade,
     required this.schoolYear,
@@ -84,6 +119,7 @@ class GradeRow {
     this.message,
     this.databaseMatches = const <DatabaseGradeRecord>[],
     this.otherPeriodMatches = const <DatabaseGradeRecord>[],
+    this.subjectVariants = const <SubjectCatalogRecord>[],
   });
 
   final int excelRowNumber;
@@ -95,6 +131,8 @@ class GradeRow {
   final String course;
   final String yearLevel;
   final String subjectCode;
+  final String excelSubjectDescription;
+  final String birthDate;
   final String units;
   final String excelGrade;
   final String schoolYear;
@@ -115,6 +153,7 @@ class GradeRow {
   String? message;
   List<DatabaseGradeRecord> databaseMatches;
   List<DatabaseGradeRecord> otherPeriodMatches;
+  List<SubjectCatalogRecord> subjectVariants;
 
   factory GradeRow.fromParsedJson(Map<String, dynamic> json) {
     return GradeRow(
@@ -127,6 +166,8 @@ class GradeRow {
       course: json['course']?.toString() ?? '',
       yearLevel: json['year_level']?.toString() ?? '',
       subjectCode: json['subject_code']?.toString() ?? '',
+      excelSubjectDescription: json['subject_description']?.toString() ?? json['excel_subject_description']?.toString() ?? '',
+      birthDate: json['birthdate']?.toString() ?? json['birth_date']?.toString() ?? '',
       units: json['units']?.toString() ?? '',
       excelGrade: json['excel_grade']?.toString() ?? '',
       schoolYear: json['school_year']?.toString() ?? '',
@@ -169,6 +210,8 @@ class GradeRow {
       'course': course,
       'year_level': yearLevel,
       'subject_code': subjectCode,
+      'subject_description': excelSubjectDescription,
+      'birthdate': birthDate,
       'units': units,
       'excel_grade': excelGrade,
       'period_id': periodId,
@@ -188,6 +231,8 @@ class GradeRow {
       'course': course,
       'year_level': yearLevel,
       'subject_code': subjectCode,
+      'excel_subject_description': excelSubjectDescription,
+      'birthdate': birthDate,
       'units': units,
       'excel_grade': excelGrade,
       'status': statusLabel,
@@ -205,6 +250,7 @@ class GradeRow {
       'message': message ?? '',
       'database_matches': databaseMatches.map((match) => match.toExportJson()).toList(),
       'other_period_matches': otherPeriodMatches.map((match) => match.toExportJson()).toList(),
+      'subject_variants': subjectVariants.map((subject) => subject.toExportJson()).toList(),
     };
   }
 
@@ -217,6 +263,10 @@ class GradeRow {
         .whereType<Map<String, dynamic>>()
         .map(DatabaseGradeRecord.fromJson)
         .toList(growable: false);
+    final subjectVariants = (json['subject_variants'] as List<dynamic>? ?? [])
+        .whereType<Map<String, dynamic>>()
+        .map(SubjectCatalogRecord.fromJson)
+        .toList(growable: false);
 
     return GradeRow(
       excelRowNumber: excelRowNumber,
@@ -228,6 +278,8 @@ class GradeRow {
       course: course,
       yearLevel: yearLevel,
       subjectCode: subjectCode,
+      excelSubjectDescription: excelSubjectDescription,
+      birthDate: birthDate,
       units: units,
       excelGrade: excelGrade,
       schoolYear: schoolYear,
@@ -247,6 +299,7 @@ class GradeRow {
       message: json['message']?.toString(),
       databaseMatches: matches,
       otherPeriodMatches: otherMatches,
+      subjectVariants: subjectVariants,
     );
   }
 }
