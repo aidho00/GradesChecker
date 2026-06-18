@@ -14,6 +14,17 @@ const double _kTableFontSize = 11.0;
 const double _kBodyFontSize = 12.0;
 double _s(num value) => value * _uiScale;
 
+const List<String> _filterOptions = [
+  'All',
+  'Existing',
+  'Missing',
+  'Grade differs',
+  'Units differ',
+  'Student not found',
+  'Subject not found',
+  'Duplicate DB grades',
+];
+
 void main() {
   runApp(const GradesCheckerApp());
 }
@@ -867,7 +878,7 @@ class _GradesCheckerPageState extends State<GradesCheckerPage> {
                   );
                 }
 
-                final uploadWidth = constraints.maxWidth < _s(1120) ? _s(132) : _s(142);
+                final uploadWidth = constraints.maxWidth < _s(1120) ? _s(168) : _s(178);
                 final checkWidth = constraints.maxWidth < _s(1120) ? _s(96) : _s(104);
                 final exportWidth = constraints.maxWidth < _s(1120) ? _s(138) : _s(150);
                 final actionWidth = uploadWidth + checkWidth + exportWidth + _s(32);
@@ -1092,30 +1103,42 @@ class _GradesCheckerPageState extends State<GradesCheckerPage> {
 
   Widget _buildToolbar(int visibleStudentCount) {
     final controlHeight = _s(44);
+    const toolbarTextStyle = TextStyle(
+      fontSize: _kBodyFontSize,
+      fontWeight: FontWeight.w800,
+      color: Color(0xFF334155),
+    );
+    final filterWidth = math
+        .min(_s(230), math.max(_s(118), _s(68) + (_filter.length * _s(8))))
+        .toDouble();
     final filter = SizedBox(
-      width: _s(118),
+      width: filterWidth,
       height: controlHeight,
       child: DropdownButtonFormField<String>(
         value: _filter,
         isDense: true,
         isExpanded: true,
         iconSize: 16,
+        style: toolbarTextStyle,
+        selectedItemBuilder: (context) => _filterOptions
+            .map((value) => Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(value, maxLines: 1, overflow: TextOverflow.ellipsis, style: toolbarTextStyle),
+                ))
+            .toList(),
         decoration: InputDecoration(
           hintText: 'Filter',
+          hintStyle: toolbarTextStyle.copyWith(color: const Color(0xFF64748B)),
           prefixIcon: const Icon(Icons.filter_alt_rounded, size: 17),
           prefixIconConstraints: BoxConstraints(minWidth: _s(32), minHeight: controlHeight),
           contentPadding: EdgeInsets.symmetric(horizontal: _s(8), vertical: 0),
         ),
-        items: const [
-          DropdownMenuItem(value: 'All', child: Text('All')),
-          DropdownMenuItem(value: 'Existing', child: Text('Existing')),
-          DropdownMenuItem(value: 'Missing', child: Text('Missing')),
-          DropdownMenuItem(value: 'Grade differs', child: Text('Grade differs')),
-          DropdownMenuItem(value: 'Units differ', child: Text('Units differ')),
-          DropdownMenuItem(value: 'Student not found', child: Text('Student not found')),
-          DropdownMenuItem(value: 'Subject not found', child: Text('Subject not found')),
-          DropdownMenuItem(value: 'Duplicate DB grades', child: Text('Duplicate DB grades')),
-        ],
+        items: _filterOptions
+            .map((value) => DropdownMenuItem<String>(
+                  value: value,
+                  child: Text(value, maxLines: 1, overflow: TextOverflow.ellipsis, style: toolbarTextStyle),
+                ))
+            .toList(),
         onChanged: (value) => setState(() {
           _filter = value ?? 'All';
           _applyFilterNoSetState(resetPage: true);
@@ -1255,11 +1278,23 @@ class _GradesCheckerPageState extends State<GradesCheckerPage> {
       onPressed: _rows.isEmpty ? null : _generateInterpretation,
       icon: const Icon(Icons.psychology_alt_rounded, size: 16),
       label: const Text('Generate overall interpretation'),
+      style: OutlinedButton.styleFrom(
+        textStyle: const TextStyle(fontSize: _kBodyFontSize, fontWeight: FontWeight.w800),
+        padding: EdgeInsets.symmetric(horizontal: _s(13), vertical: _s(10)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(_s(10))),
+      ),
     );
     return LayoutBuilder(
       builder: (context, constraints) {
         if (constraints.maxWidth < _s(980)) {
-          return Wrap(spacing: _s(12), runSpacing: _s(8), crossAxisAlignment: WrapCrossAlignment.center, children: [pageTools, interpretationButton]);
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              SingleChildScrollView(scrollDirection: Axis.horizontal, child: pageTools),
+              SizedBox(height: _s(8)),
+              Align(alignment: Alignment.centerRight, child: interpretationButton),
+            ],
+          );
         }
         return Row(children: [Flexible(child: pageTools), const Spacer(), interpretationButton]);
       },
