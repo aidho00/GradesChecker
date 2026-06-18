@@ -181,9 +181,30 @@ function xlsx_from_index(array $row, ?int $index): string
     return xlsx_clean_value($row[$index] ?? '');
 }
 
+function xlsx_birthdate_from_index(array $row, ?int $index): string
+{
+    $raw = xlsx_from_index($row, $index);
+    if ($raw === '') return '';
+
+    if (is_numeric($raw)) {
+        $days = (float) $raw;
+        if ($days > 20000 && $days < 80000) {
+            $timestamp = (int) (($days - 25569) * 86400);
+            return gmdate('Y-m-d', $timestamp);
+        }
+    }
+
+    $timestamp = strtotime($raw);
+    if ($timestamp !== false) {
+        return date('Y-m-d', $timestamp);
+    }
+
+    return $raw;
+}
+
 try {
     if (!isset($_FILES['excel']) || !is_uploaded_file($_FILES['excel']['tmp_name'])) {
-        json_response(['ok' => false, 'message' => 'Missing uploaded Excel file field named excel.'], 400);
+        json_response(['ok' => false, 'message' => 'Missing uploaded UNO file field named excel.'], 400);
     }
 
     $periodId = trim((string) ($_POST['period_id'] ?? ''));
@@ -195,7 +216,7 @@ try {
     if (!preg_match('/\.xlsx$/i', $fileName)) {
         json_response([
             'ok' => false,
-            'message' => 'Invalid file type. Please upload the original UNO promotional-list Excel file in .xlsx format.',
+            'message' => 'Invalid file type. Please upload the original UNO promotional-list UNO file in .xlsx format.',
         ], 400);
     }
 
@@ -264,7 +285,7 @@ try {
             if (!empty($missingHeaders)) {
                 json_response([
                     'ok' => false,
-                    'message' => 'The uploaded Excel file does not look like the UNO promotional-list format. Missing required column(s): ' . implode(', ', $missingHeaders) . '.',
+                    'message' => 'The uploaded UNO file does not look like the UNO promotional-list format. Missing required column(s): ' . implode(', ', $missingHeaders) . '.',
                     'expected_format' => 'ID, LAST NAME, FIRST NAME, COURSE, YEARLEVEL, optional BIRTHDATE, then SUBJECT1/SUBJECTDESC1/UNITS1/GRADE1 up to SUBJECT10/SUBJECTDESC10/UNITS10/GRADE10.',
                 ], 400);
             }
@@ -282,7 +303,7 @@ try {
         $middleName = xlsx_from_index($values, $middleNameIndex);
         $course = xlsx_from_index($values, $courseIndex);
         $yearLevel = xlsx_from_index($values, $yearLevelIndex);
-        $birthDate = xlsx_from_index($values, $birthDateIndex);
+        $birthDate = xlsx_birthdate_from_index($values, $birthDateIndex);
 
         foreach ($subjectSlots as $slot) {
             $subject = xlsx_from_index($values, $slot['subject_index']);
@@ -311,7 +332,7 @@ try {
     if ($studentRows === 0 || count($parsed) === 0) {
         json_response([
             'ok' => false,
-            'message' => 'The Excel file was opened, but no UNO student subject-grade rows were found. Please verify that the first worksheet is the promotional list and that it contains ID and SUBJECT/UNITS/GRADE columns.',
+            'message' => 'The UNO file was opened, but no UNO student subject-grade rows were found. Please verify that the first worksheet is the promotional list and that it contains ID and SUBJECT/UNITS/GRADE columns.',
         ], 400);
     }
 

@@ -31,6 +31,35 @@ function add_if_column(array &$data, array $columns, string $column, mixed $valu
 }
 
 
+function default_value_for_column(array $column): mixed
+{
+    $type = strtolower((string) ($column['Type'] ?? ''));
+    if (str_contains($type, 'int') || str_contains($type, 'decimal') || str_contains($type, 'double') || str_contains($type, 'float')) {
+        return 0;
+    }
+    if (str_contains($type, 'datetime') || str_contains($type, 'timestamp')) {
+        return date('Y-m-d H:i:s');
+    }
+    if (preg_match('/\bdate\b/', $type)) {
+        return date('Y-m-d');
+    }
+    return '';
+}
+
+function fill_required_legacy_defaults(array &$data, array $columns): void
+{
+    foreach ($columns as $field => $column) {
+        if (array_key_exists($field, $data)) continue;
+        $isRequired = strtoupper((string) ($column['Null'] ?? 'YES')) === 'NO';
+        $hasDefault = array_key_exists('Default', $column) && $column['Default'] !== null;
+        $extra = strtolower((string) ($column['Extra'] ?? ''));
+        if ($isRequired && !$hasDefault && !str_contains($extra, 'auto_increment')) {
+            $data[$field] = default_value_for_column($column);
+        }
+    }
+}
+
+
 function normalize_year_level_label(mixed $value): string
 {
     $compact = strtolower(preg_replace('/[^a-z0-9]+/', '', trim((string) $value)));
@@ -155,12 +184,16 @@ try {
     add_if_column($data, $columns, 's_curr_id', 0);
     add_if_column($data, $columns, 's_course_status', '');
     add_if_column($data, $columns, 's_prereg_refno', '');
+    add_if_column($data, $columns, 's_otr_mode', '');
+    add_if_column($data, $columns, 's_otr_remarks', '');
     add_if_column($data, $columns, 's_ext_loc', 0);
     add_if_column($data, $columns, 'sync_status', 0);
     add_if_column($data, $columns, 'sync_last_modified', date('Y-m-d H:i:s'));
 
+    fill_required_legacy_defaults($data, $columns);
+
     if (empty($data['s_id_no'])) {
-        json_response(['ok' => false, 'message' => 'tbl_student.s_id_no column was not found.'], 500);
+        json_response(['ok' => false, 'message' => 'The required student ID field was not found in the student records.'], 500);
     }
 
     $fieldNames = array_keys($data);
@@ -192,7 +225,8 @@ try {
     }
     json_response([
         'ok' => false,
-        'message' => $e->getMessage(),
-        'hint' => 'Check tbl_student required columns and confirm the Excel row has a student ID, first name, and last name.',
+        'message' => 'Unable to save the student profile. Please check the required profile details and try again.',
+        'technical_message' => $e->getMessage(),
+        'hint' => 'Confirm the UNO row has a student ID, first name, and last name.',
     ], 500);
 }

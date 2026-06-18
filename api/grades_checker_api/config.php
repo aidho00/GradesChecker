@@ -25,8 +25,8 @@ const GRADE_CHECKER_TOKEN_TTL_SECONDS = 28800;
 /**
  * Exact UNO/SMS table mapping used by the checker.
  * Main matching path:
- * Excel student ID or first/last name -> tbl_student
- * Excel subject code -> tbl_subject
+ * UNO student ID or first/last name -> student records
+ * UNO subject code -> subject records
  * Selected period -> tbl_period.period_id
  * Grade existence -> tbl_students_grades
  */

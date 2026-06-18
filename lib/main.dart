@@ -12,6 +12,7 @@ const double _uiScale = 0.78;
 const double _kHeaderFontSize = 15.0;
 const double _kTableFontSize = 11.0;
 const double _kBodyFontSize = 12.0;
+const double _kDataRowHeight = 162.0;
 double _s(num value) => value * _uiScale;
 
 const List<String> _filterOptions = [
@@ -22,7 +23,7 @@ const List<String> _filterOptions = [
   'Units differ',
   'Student not found',
   'Subject not found',
-  'Duplicate DB grades',
+  'Duplicate SMS grades',
 ];
 
 void main() {
@@ -139,7 +140,6 @@ class _GradesCheckerPageState extends State<GradesCheckerPage> {
   @override
   void initState() {
     super.initState();
-    _horizontalController.addListener(_syncHorizontalMetricsFromController);
     _restoreSavedSession();
   }
 
@@ -147,7 +147,6 @@ class _GradesCheckerPageState extends State<GradesCheckerPage> {
   void dispose() {
     _apiController.dispose();
     _searchController.dispose();
-    _horizontalController.removeListener(_syncHorizontalMetricsFromController);
     _horizontalController.dispose();
     _usernameController.dispose();
     _passwordController.dispose();
@@ -262,7 +261,7 @@ class _GradesCheckerPageState extends State<GradesCheckerPage> {
       'Units differ' => group.rows.any((row) => row.unitsMatch == false),
       'Student not found' => group.rows.any((row) => row.studentFound == false),
       'Subject not found' => group.rows.any((row) => row.subjectFound == false),
-      'Duplicate DB grades' => group.rows.any((row) => row.databaseMatches.length > 1),
+      'Duplicate SMS grades' => group.rows.any((row) => row.databaseMatches.length > 1),
       _ => true,
     };
   }
@@ -440,7 +439,7 @@ class _GradesCheckerPageState extends State<GradesCheckerPage> {
 
     setState(() {
       _loadingPeriods = true;
-      _status = 'Loading academic years from Database...';
+      _status = 'Loading academic years from SMS...';
     });
 
     try {
@@ -459,12 +458,12 @@ class _GradesCheckerPageState extends State<GradesCheckerPage> {
         _periods = periods;
         _selectedPeriod = selected;
         _status = periods.isEmpty
-            ? 'No academic years found in tbl_period. Check the Database period records and semester names.'
+            ? 'No academic years found. Check SMS academic year records and semester names.'
             : 'Selected academic year: ${selected?.label ?? periods.first.label}. Upload the UNO promotional list to continue.';
       });
     } catch (error) {
       setState(() {
-        _status = 'Unable to load academic years. Check Apache/Database and Connection settings. $error';
+        _status = 'Unable to load academic years. Check Apache, SMS connection, and Connection settings. $error';
       });
     } finally {
       if (mounted) setState(() => _loadingPeriods = false);
@@ -546,7 +545,7 @@ class _GradesCheckerPageState extends State<GradesCheckerPage> {
           setState(() {
             _operationDone = uploaded;
             _operationTotal = total;
-            _operationLabel = 'Uploading Excel • ${_formatBytes(uploaded)} / ${_formatBytes(total)}';
+            _operationLabel = 'Uploading UNO • ${_formatBytes(uploaded)} / ${_formatBytes(total)}';
             _status = 'Uploading ${file.name}... ${_formatBytes(uploaded)} of ${_formatBytes(total)}';
           });
         },
@@ -556,7 +555,7 @@ class _GradesCheckerPageState extends State<GradesCheckerPage> {
             _operationLabel = phase;
             _operationDone = 0;
             _operationTotal = 0;
-            _status = phase == 'Decoding parsed Excel response'
+            _status = phase == 'Decoding UNO response'
                 ? 'Server finished parsing. Preparing the preview rows...'
                 : 'Preparing the loaded data for paginated display...';
           });
@@ -577,7 +576,7 @@ class _GradesCheckerPageState extends State<GradesCheckerPage> {
       });
     } catch (error) {
       if (!mounted) return;
-      setState(() => _status = 'Excel upload/parsing failed: $error');
+      setState(() => _status = 'UNO upload/parsing failed: $error');
     } finally {
       if (mounted) {
         setState(() {
@@ -596,7 +595,7 @@ class _GradesCheckerPageState extends State<GradesCheckerPage> {
       return;
     }
     if (_rows.isEmpty) {
-      setState(() => _status = 'Please upload and parse an Excel file first.');
+      setState(() => _status = 'Please upload and parse the UNO file first.');
       return;
     }
 
@@ -604,11 +603,11 @@ class _GradesCheckerPageState extends State<GradesCheckerPage> {
     setState(() {
       _rows = liveRows;
       _isBusy = true;
-      _operationLabel = 'Checking database in batches';
+      _operationLabel = 'Checking SMS in batches';
       _operationDone = 0;
       _operationTotal = liveRows.length;
       _interpretation = null;
-      _status = 'Checking database in smaller batches to keep the browser responsive... 0 / ${liveRows.length}';
+      _status = 'Checking SMS in smaller batches to keep the browser responsive... 0 / ${liveRows.length}';
     });
 
     try {
@@ -627,7 +626,7 @@ class _GradesCheckerPageState extends State<GradesCheckerPage> {
           setState(() {
             _operationDone = checked;
             _operationTotal = total;
-            _status = 'Checking database in smaller batches... $checked / $total';
+            _status = 'Checking SMS in smaller batches... $checked / $total';
           });
         },
       );
@@ -635,10 +634,10 @@ class _GradesCheckerPageState extends State<GradesCheckerPage> {
       setState(() {
         _rows = checkedRows;
         _refreshDerivedData(resetPage: false);
-        _status = 'Done. Existing: $_existingCount, Missing: $_missingCount, Grade differs: $_gradeDiffCount, Units differ: $_unitsDiffCount, Duplicate DB grades: $_duplicateGradeCount.';
+        _status = 'Done. Existing: $_existingCount, Missing: $_missingCount, Grade differs: $_gradeDiffCount, Units differ: $_unitsDiffCount, Duplicate SMS grades: $_duplicateGradeCount.';
       });
     } catch (error) {
-      setState(() => _status = 'Database check failed: $error');
+      setState(() => _status = 'SMS check failed: $error');
     } finally {
       if (mounted) {
         setState(() {
@@ -657,10 +656,10 @@ class _GradesCheckerPageState extends State<GradesCheckerPage> {
 
     setState(() {
       _isBusy = true;
-      _operationLabel = 'Generating formatted Excel export';
+      _operationLabel = 'Generating formatted UNO report';
       _operationDone = 0;
       _operationTotal = _studentCount;
-      _status = 'Generating formatted Excel-compatible export on the PHP API...';
+      _status = 'Generating formatted UNO report on the PHP API...';
     });
 
     try {
@@ -717,7 +716,7 @@ class _GradesCheckerPageState extends State<GradesCheckerPage> {
 
   String _buildInterpretationText() {
     if (_rows.isEmpty) {
-      return 'No UNO promotional-list data has been loaded yet. Upload the file and run the database check first.';
+      return 'No UNO promotional-list data has been loaded yet. Upload the file and run the SMS check first.';
     }
 
     final total = _rows.length;
@@ -725,14 +724,14 @@ class _GradesCheckerPageState extends State<GradesCheckerPage> {
     final existingPct = total == 0 ? 0.0 : (_existingCount / total) * 100;
     final issuePct = total == 0 ? 0.0 : (issueCount / total) * 100;
     final duplicateText = _duplicateGradeCount > 0
-        ? ' There are also $_duplicateGradeCount subject entries with more than one matching grade record in the database; tap the subject cells to inspect all DB grades.'
+        ? ' There are also $_duplicateGradeCount subject entries with more than one matching grade record in SMS; tap the subject cells to inspect all SMS grades.'
         : '';
 
     final overall = issueCount == 0 && _checkedCount == total
-        ? 'Overall, the uploaded Excel file is consistent with the selected database period.'
+        ? 'Overall, the uploaded UNO file is consistent with the selected SMS academic year.'
         : issuePct <= 5 && _checkedCount == total
-            ? 'Overall, the uploaded Excel file is mostly consistent with the selected database period, with only a small number of records requiring review.'
-            : 'Overall, the uploaded Excel file still needs review before it can be considered fully matched with the selected database period.';
+            ? 'Overall, the uploaded UNO file is mostly consistent with the selected SMS academic year, with only a small number of records requiring review.'
+            : 'Overall, the uploaded UNO file still needs review before it can be considered fully matched with the selected SMS academic year.';
 
     return '$overall\n\n'
         'For ${_selectedPeriod?.label ?? 'the selected period'}, $_checkedCount of $total subject-grade records were checked across $_studentCount students. '
@@ -746,30 +745,31 @@ class _GradesCheckerPageState extends State<GradesCheckerPage> {
     showDialog<void>(
       context: context,
       builder: (dialogContext) {
-        return AlertDialog(
-          title: const Text('Connection settings'),
-          content: SizedBox(
-            width: _s(560),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                const Text(
-                  'Change this only when Apache is running on another port, folder, or server IP.',
-                  style: TextStyle(color: Color(0xFF64748B), fontSize: _kBodyFontSize),
+        return _ModernDialogScaffold(
+          title: 'Connection settings',
+          subtitle: 'Update only when Apache is running on another port, folder, or server IP.',
+          icon: Icons.link_rounded,
+          width: 620,
+          onClose: () => Navigator.of(dialogContext).pop(),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              TextField(
+                controller: _apiController,
+                enabled: !_isBusy,
+                decoration: const InputDecoration(
+                  labelText: 'API endpoint',
+                  prefixIcon: Icon(Icons.link_rounded, size: 18),
+                  hintText: 'http://localhost/grades_checker_api/check_grades.php',
                 ),
-                SizedBox(height: _s(10)),
-                TextField(
-                  controller: _apiController,
-                  enabled: !_isBusy,
-                  decoration: const InputDecoration(
-                    labelText: 'API endpoint',
-                    prefixIcon: Icon(Icons.link_rounded),
-                    hintText: 'http://localhost/grades_checker_api/check_grades.php',
-                  ),
-                ),
-              ],
-            ),
+              ),
+              SizedBox(height: _s(8)),
+              const Text(
+                'Use this if your SMS API folder is hosted in a different Apache path or another computer in the network.',
+                style: TextStyle(color: Color(0xFF64748B), fontSize: _kBodyFontSize),
+              ),
+            ],
           ),
           actions: [
             TextButton(
@@ -783,13 +783,29 @@ class _GradesCheckerPageState extends State<GradesCheckerPage> {
                       Navigator.of(dialogContext).pop();
                       _loadPeriods();
                     },
-              icon: const Icon(Icons.sync_rounded),
-              label: const Text('Save & reload periods'),
+              icon: const Icon(Icons.sync_rounded, size: 18),
+              label: const Text('Save & reload years'),
             ),
           ],
         );
       },
     );
+  }
+
+
+  bool _canSaveSmsGradeForRow(GradeRow row) {
+    if (row.studentFound != true || row.subjectVariants.isEmpty) return false;
+    final missingGrade = !row.existsInDatabase && row.subjectFound == true;
+    final differs = row.existsInDatabase && (row.gradeMatches == false || row.unitsMatch == false);
+    return missingGrade || differs;
+  }
+
+  bool _isUpdateSmsGradeAction(GradeRow row) {
+    return row.existsInDatabase && (row.gradeMatches == false || row.unitsMatch == false);
+  }
+
+  String _smsGradeActionLabel(GradeRow row) {
+    return _isUpdateSmsGradeAction(row) ? 'Update grade in SMS' : 'Insert grade to SMS';
   }
 
   void _openSubjectDetails(GradeRow row) {
@@ -797,82 +813,400 @@ class _GradesCheckerPageState extends State<GradesCheckerPage> {
     showDialog<void>(
       context: context,
       builder: (dialogContext) {
-        return AlertDialog(
-          titlePadding: EdgeInsets.fromLTRB(_s(20), _s(16), _s(20), _s(8)),
-          contentPadding: EdgeInsets.fromLTRB(_s(20), 0, _s(20), _s(14)),
-          title: Row(
+        return _ModernDialogScaffold(
+          title: row.subjectCode.isEmpty ? 'Subject details' : row.subjectCode,
+          subtitle: 'Review the UNO subject, matching SMS subject choices, and grade records.',
+          icon: Icons.menu_book_rounded,
+          iconColor: visual.color,
+          width: 880,
+          maxHeightFactor: 0.92,
+          onClose: () => Navigator.of(dialogContext).pop(),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Container(width: _s(10), height: _s(10), decoration: BoxDecoration(color: visual.color, shape: BoxShape.circle)),
-              SizedBox(width: _s(10)),
-              Expanded(child: Text(row.subjectCode.isEmpty ? 'Subject details' : row.subjectCode, style: const TextStyle(fontWeight: FontWeight.w900))),
-            ],
-          ),
-          content: SizedBox(
-            width: _s(780),
-            child: SingleChildScrollView(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
+              Container(
+                padding: EdgeInsets.all(_s(12)),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF8FAFC),
+                  borderRadius: BorderRadius.circular(_s(14)),
+                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('UNO subject details', style: TextStyle(fontWeight: FontWeight.w900, fontSize: _kHeaderFontSize, color: Color(0xFF0F172A))),
+                    SizedBox(height: _s(6)),
+                    Text('UNO description: ${row.excelSubjectDescription.trim().isNotEmpty ? row.excelSubjectDescription : '-'}', style: const TextStyle(color: Color(0xFF475569), fontSize: _kBodyFontSize, fontWeight: FontWeight.w800)),
+                    SizedBox(height: _s(3)),
+                    Text('SMS description: ${row.subjectDescription?.trim().isNotEmpty == true ? row.subjectDescription! : '-'}', style: const TextStyle(color: Color(0xFF475569), fontSize: _kBodyFontSize)),
+                  ],
+                ),
+              ),
+              SizedBox(height: _s(12)),
+              _sectionLabel('Subject choices (${row.subjectVariants.length})', Icons.category_rounded),
+              if (row.subjectVariants.isEmpty)
+                const Text('No matching SMS subject choices were returned yet. Run Check to load subject descriptions and units.', style: TextStyle(color: Color(0xFF64748B), fontSize: _kBodyFontSize))
+              else
+                _SubjectCatalogTable(subjects: row.subjectVariants),
+              SizedBox(height: _s(12)),
+              Wrap(
+                spacing: _s(8),
+                runSpacing: _s(8),
                 children: [
-                  Text('Excel description: ${row.excelSubjectDescription.trim().isNotEmpty ? row.excelSubjectDescription : '-'}', style: const TextStyle(color: Color(0xFF475569), fontSize: _kBodyFontSize, fontWeight: FontWeight.w800)),
-                  SizedBox(height: _s(4)),
-                  Text('Matched DB description: ${row.subjectDescription?.trim().isNotEmpty == true ? row.subjectDescription! : '-'}', style: const TextStyle(color: Color(0xFF475569), fontSize: _kBodyFontSize)),
-                  SizedBox(height: _s(12)),
-                  Text('Subject catalog records for ${row.subjectCode.isEmpty ? 'this code' : row.subjectCode} (${row.subjectVariants.length})', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: _kHeaderFontSize)),
-                  SizedBox(height: _s(8)),
-                  if (row.subjectVariants.isEmpty)
-                    const Text('No matching tbl_subject record list was returned yet. Run Check to load subject descriptions and units.', style: TextStyle(color: Color(0xFF64748B), fontSize: _kBodyFontSize))
-                  else
-                    _SubjectCatalogTable(subjects: row.subjectVariants),
-                  SizedBox(height: _s(12)),
-                  Wrap(
-                    spacing: _s(8),
-                    runSpacing: _s(8),
-                    children: [
-                      _DetailPill(label: 'Status', value: row.statusLabel, color: visual.color),
-                      _DetailPill(label: 'Excel grade', value: row.excelGrade.isEmpty ? '-' : row.excelGrade, color: const Color(0xFF2563EB)),
-                      _DetailPill(label: 'Excel units', value: row.units.isEmpty ? '-' : row.units, color: const Color(0xFF2563EB)),
-                      _DetailPill(label: 'DB grade', value: row.databaseGrade?.trim().isNotEmpty == true ? row.databaseGrade! : '-', color: const Color(0xFF334155)),
-                      _DetailPill(label: 'DB units', value: row.databaseCredits?.trim().isNotEmpty == true ? row.databaseCredits! : '-', color: const Color(0xFF334155)),
-                    ],
-                  ),
-                  SizedBox(height: _s(12)),
-                  if (row.message?.trim().isNotEmpty == true)
-                    Container(
-                      padding: EdgeInsets.all(_s(10)),
-                      decoration: BoxDecoration(
-                        color: visual.background,
-                        borderRadius: BorderRadius.circular(_s(12)),
-                        border: Border.all(color: visual.border),
-                      ),
-                      child: Text(row.message!, style: TextStyle(color: visual.color, fontWeight: FontWeight.w800)),
-                    ),
-                  SizedBox(height: _s(14)),
-                  Text('Selected-period grade records (${row.databaseMatches.length})', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: _kHeaderFontSize)),
-                  SizedBox(height: _s(8)),
-                  if (row.databaseMatches.isEmpty)
-                    const Text('No database grade record returned for this subject and selected period.', style: TextStyle(color: Color(0xFF64748B)))
-                  else
-                    _DatabaseMatchesTable(matches: row.databaseMatches),
-                  SizedBox(height: _s(16)),
-                  Text('Other-period grade records (${row.otherPeriodMatches.length})', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: _kHeaderFontSize)),
-                  SizedBox(height: _s(8)),
-                  if (row.otherPeriodMatches.isEmpty)
-                    const Text('No grade record found for this same student and subject in other academic periods.', style: TextStyle(color: Color(0xFF64748B)))
-                  else
-                    _DatabaseMatchesTable(matches: row.otherPeriodMatches),
+                  _DetailPill(label: 'Status', value: row.statusLabel, color: visual.color),
+                  _DetailPill(label: 'UNO grade', value: row.excelGrade.isEmpty ? '-' : row.excelGrade, color: const Color(0xFF2563EB)),
+                  _DetailPill(label: 'UNO units', value: row.units.isEmpty ? '-' : row.units, color: const Color(0xFF2563EB)),
+                  _DetailPill(label: 'SMS grade', value: row.databaseGrade?.trim().isNotEmpty == true ? row.databaseGrade! : '-', color: const Color(0xFF334155)),
+                  _DetailPill(label: 'SMS units', value: row.databaseCredits?.trim().isNotEmpty == true ? row.databaseCredits! : '-', color: const Color(0xFF334155)),
                 ],
               ),
-            ),
+              SizedBox(height: _s(12)),
+              if (row.message?.trim().isNotEmpty == true)
+                Container(
+                  padding: EdgeInsets.all(_s(10)),
+                  decoration: BoxDecoration(
+                    color: visual.background,
+                    borderRadius: BorderRadius.circular(_s(12)),
+                    border: Border.all(color: visual.border),
+                  ),
+                  child: Text(row.message!, style: TextStyle(color: visual.color, fontWeight: FontWeight.w800, fontSize: _kBodyFontSize)),
+                ),
+              SizedBox(height: _s(14)),
+              _sectionLabel('Selected academic year grade records (${row.databaseMatches.length})', Icons.fact_check_rounded),
+              if (row.databaseMatches.isEmpty)
+                const Text('No SMS grade returned for this subject and selected academic year.', style: TextStyle(color: Color(0xFF64748B), fontSize: _kBodyFontSize))
+              else
+                _DatabaseMatchesTable(matches: row.databaseMatches),
+              SizedBox(height: _s(16)),
+              _sectionLabel('Other academic year grade records (${row.otherPeriodMatches.length})', Icons.history_rounded),
+              if (row.otherPeriodMatches.isEmpty)
+                const Text('No grade record found for this same student and subject in other academic years.', style: TextStyle(color: Color(0xFF64748B), fontSize: _kBodyFontSize))
+              else
+                _DatabaseMatchesTable(matches: row.otherPeriodMatches),
+            ],
           ),
           actions: [
             TextButton(onPressed: () => Navigator.of(dialogContext).pop(), child: const Text('Close')),
+            if (_canSaveSmsGradeForRow(row))
+              FilledButton.icon(
+                onPressed: _isBusy
+                    ? null
+                    : () {
+                        Navigator.of(dialogContext).pop();
+                        _openInsertSmsGradeDialog(row);
+                      },
+                icon: Icon(_isUpdateSmsGradeAction(row) ? Icons.edit_note_rounded : Icons.add_task_rounded, size: 18),
+                label: Text(_smsGradeActionLabel(row)),
+              ),
           ],
         );
       },
     );
   }
 
+  SubjectCatalogRecord? _subjectChoiceById(List<SubjectCatalogRecord> subjects, String? id) {
+    if (id == null) return null;
+    for (final subject in subjects) {
+      if (subject.subjectId == id) return subject;
+    }
+    return null;
+  }
 
+  List<SubjectCatalogRecord> _filterSubjectChoices(List<SubjectCatalogRecord> subjects, String query) {
+    final q = _courseCompareKey(query);
+    if (q.isEmpty) return subjects;
+    return subjects.where((subject) {
+      return _courseCompareKey('${subject.subjectCode} ${subject.subjectDescription} ${subject.subjectUnits}').contains(q);
+    }).toList(growable: false);
+  }
+
+  bool _subjectListContains(List<SubjectCatalogRecord> subjects, String id) {
+    return subjects.any((subject) => subject.subjectId == id);
+  }
+
+  void _openInsertSmsGradeDialog(GradeRow row) {
+    if (_selectedPeriod == null) {
+      setState(() => _status = 'Please select an academic year first.');
+      return;
+    }
+    if (row.studentFound == false) {
+      setState(() => _status = 'Create the student profile first before inserting a grade.');
+      return;
+    }
+    if (row.subjectVariants.isEmpty) {
+      setState(() => _status = 'Run Check first so subject choices can be loaded.');
+      return;
+    }
+
+    final actionLabel = _smsGradeActionLabel(row);
+    final isUpdateAction = _isUpdateSmsGradeAction(row);
+    const modalFieldStyle = TextStyle(fontSize: _kBodyFontSize, color: Color(0xFF0F172A), fontWeight: FontWeight.w700);
+    const modalSmallStyle = TextStyle(fontSize: _kTableFontSize, color: Color(0xFF475569), fontWeight: FontWeight.w700);
+    final gradeController = TextEditingController(text: row.excelGrade);
+    final creditsController = TextEditingController(text: row.units.isNotEmpty ? row.units : (row.subjectUnits ?? ''));
+    final subjectSearchController = TextEditingController(text: row.excelSubjectDescription.trim().isNotEmpty ? row.excelSubjectDescription : row.subjectCode);
+    var selectedSubjectId = row.subjectVariants.first.subjectId;
+    var saving = false;
+
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            final filteredSubjects = _filterSubjectChoices(row.subjectVariants, subjectSearchController.text);
+            final subjectChoices = filteredSubjects.isEmpty ? row.subjectVariants : filteredSubjects;
+            if (!_subjectListContains(subjectChoices, selectedSubjectId)) {
+              selectedSubjectId = subjectChoices.first.subjectId;
+            }
+            final selectedSubject = _subjectChoiceById(row.subjectVariants, selectedSubjectId) ?? row.subjectVariants.first;
+
+            return _ModernDialogScaffold(
+              title: actionLabel,
+              subtitle: isUpdateAction ? 'Review the selected SMS subject and update the grade for the selected academic year.' : 'Choose the correct SMS subject and save the grade for the selected academic year.',
+              icon: isUpdateAction ? Icons.edit_note_rounded : Icons.add_task_rounded,
+              width: 740,
+              maxHeightFactor: 0.88,
+              onClose: () => Navigator.of(dialogContext).pop(),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Wrap(
+                    spacing: _s(6),
+                    runSpacing: _s(6),
+                    children: [
+                      _DetailPill(label: 'Student ID', value: row.studentId.isEmpty ? '-' : row.studentId, color: const Color(0xFF2563EB)),
+                      _DetailPill(label: 'Academic year', value: _selectedPeriod?.label ?? '-', color: const Color(0xFF334155)),
+                    ],
+                  ),
+                  SizedBox(height: _s(8)),
+                  Container(
+                    padding: EdgeInsets.all(_s(10)),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF8FAFC),
+                      borderRadius: BorderRadius.circular(_s(12)),
+                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('UNO subject reference', style: TextStyle(fontSize: _kTableFontSize, fontWeight: FontWeight.w900, color: Color(0xFF334155))),
+                        SizedBox(height: _s(4)),
+                        Text(row.subjectCode.isEmpty ? '-' : row.subjectCode, style: const TextStyle(fontSize: _kBodyFontSize, fontWeight: FontWeight.w900, color: Color(0xFF0F172A))),
+                        if (row.excelSubjectDescription.trim().isNotEmpty) ...[
+                          SizedBox(height: _s(3)),
+                          Text(row.excelSubjectDescription, style: modalSmallStyle),
+                        ],
+                        SizedBox(height: _s(6)),
+                        Wrap(
+                          spacing: _s(6),
+                          runSpacing: _s(6),
+                          children: [
+                            _DetailPill(label: 'UNO grade', value: row.excelGrade.isEmpty ? '-' : row.excelGrade, color: const Color(0xFF2563EB)),
+                            _DetailPill(label: 'UNO units', value: row.units.isEmpty ? '-' : row.units, color: const Color(0xFF2563EB)),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  SizedBox(height: _s(9)),
+                  TextField(
+                    controller: subjectSearchController,
+                    style: modalFieldStyle,
+                    enabled: !saving,
+                    onChanged: (_) => setDialogState(() {}),
+                    decoration: InputDecoration(
+                      labelText: 'Search SMS subject',
+                      hintText: 'Code, description, or units',
+                      prefixIcon: const Icon(Icons.search_rounded, size: 18),
+                      suffixIcon: subjectSearchController.text.isEmpty
+                          ? null
+                          : IconButton(
+                              tooltip: 'Clear search',
+                              onPressed: saving
+                                  ? null
+                                  : () {
+                                      subjectSearchController.clear();
+                                      setDialogState(() {});
+                                    },
+                              icon: const Icon(Icons.close_rounded, size: 18),
+                            ),
+                    ),
+                  ),
+                  SizedBox(height: _s(7)),
+                  DropdownButtonFormField<String>(
+                    value: selectedSubjectId,
+                    isExpanded: true,
+                    style: modalFieldStyle,
+                    decoration: InputDecoration(
+                      labelText: 'SMS subject',
+                      helperText: filteredSubjects.isEmpty && subjectSearchController.text.trim().isNotEmpty
+                          ? 'No match found. Showing all options.'
+                          : null,
+                    ),
+                    items: subjectChoices
+                        .map((subject) => DropdownMenuItem(
+                              value: subject.subjectId,
+                              child: Text(
+                                '${subject.subjectCode} - ${subject.subjectDescription} (${subject.subjectUnits} units)',
+                                overflow: TextOverflow.ellipsis,
+                                style: modalFieldStyle,
+                              ),
+                            ))
+                        .toList(),
+                    onChanged: saving
+                        ? null
+                        : (value) => setDialogState(() {
+                              selectedSubjectId = value ?? selectedSubjectId;
+                              final nextSubject = _subjectChoiceById(row.subjectVariants, selectedSubjectId);
+                              if (nextSubject != null && creditsController.text.trim().isEmpty) {
+                                creditsController.text = nextSubject.subjectUnits;
+                              }
+                            }),
+                  ),
+                  SizedBox(height: _s(8)),
+                  Container(
+                    padding: EdgeInsets.all(_s(10)),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF8FAFC),
+                      borderRadius: BorderRadius.circular(_s(12)),
+                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('Chosen SMS subject', style: TextStyle(fontSize: _kTableFontSize, fontWeight: FontWeight.w900, color: Color(0xFF334155))),
+                        SizedBox(height: _s(4)),
+                        Text(selectedSubject.subjectDescription.isEmpty ? '-' : selectedSubject.subjectDescription, style: modalSmallStyle),
+                        SizedBox(height: _s(2)),
+                        Text('Units: ${selectedSubject.subjectUnits.isEmpty ? '-' : selectedSubject.subjectUnits}', style: modalSmallStyle),
+                      ],
+                    ),
+                  ),
+                  SizedBox(height: _s(8)),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: gradeController,
+                          enabled: !saving,
+                          style: modalFieldStyle,
+                          decoration: const InputDecoration(labelText: 'Grade'),
+                        ),
+                      ),
+                      SizedBox(width: _s(8)),
+                      Expanded(
+                        child: TextField(
+                          controller: creditsController,
+                          enabled: !saving,
+                          style: modalFieldStyle,
+                          decoration: const InputDecoration(labelText: 'Units'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: saving ? null : () => Navigator.of(dialogContext).pop(),
+                  style: TextButton.styleFrom(textStyle: const TextStyle(fontSize: _kBodyFontSize, fontWeight: FontWeight.w800)),
+                  child: const Text('Cancel'),
+                ),
+                FilledButton.icon(
+                  onPressed: saving
+                      ? null
+                      : () async {
+                          final grade = gradeController.text.trim();
+                          if (grade.isEmpty) {
+                            setState(() => _status = 'Grade is required before inserting to SMS.');
+                            return;
+                          }
+                          setDialogState(() => saving = true);
+                          Navigator.of(dialogContext).pop();
+                          await _insertSmsGradeForRow(
+                            row,
+                            subjectId: selectedSubjectId,
+                            grade: grade,
+                            credits: creditsController.text.trim(),
+                          );
+                        },
+                  style: FilledButton.styleFrom(textStyle: const TextStyle(fontSize: _kBodyFontSize, fontWeight: FontWeight.w800)),
+                  icon: saving ? SizedBox(width: _s(14), height: _s(14), child: const CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.add_task_rounded, size: 17),
+                  label: Text(saving ? 'Saving...' : (isUpdateAction ? 'Update grade' : 'Insert grade')),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    ).whenComplete(() {
+      gradeController.dispose();
+      creditsController.dispose();
+      subjectSearchController.dispose();
+    });
+  }
+
+  Future<void> _insertSmsGradeForRow(
+    GradeRow row, {
+    required String subjectId,
+    required String grade,
+    required String credits,
+  }) async {
+    final period = _selectedPeriod;
+    if (period == null) return;
+
+    setState(() {
+      _isBusy = true;
+      _operationLabel = row.existsInDatabase ? 'Updating grade' : 'Inserting grade';
+      _operationDone = 0;
+      _operationTotal = 0;
+      _status = row.existsInDatabase ? 'Updating grade in SMS...' : 'Inserting grade to SMS...';
+    });
+
+    try {
+      final result = await _api.insertSmsGrade(
+        studentId: row.studentId,
+        subjectId: subjectId,
+        periodId: period.id,
+        grade: grade,
+        credits: credits,
+        course: row.databaseCourse?.trim().isNotEmpty == true ? row.databaseCourse! : row.course,
+        yearLevel: row.yearLevel,
+        subjectNo: row.subjectNo,
+      );
+
+      final checked = await _api.checkRows(rows: [row], periodId: period.id, chunkSize: 1);
+      if (checked.isNotEmpty) {
+        for (var i = 0; i < _rows.length; i++) {
+          final current = _rows[i];
+          if (current.excelRowNumber == row.excelRowNumber &&
+              current.subjectNo == row.subjectNo &&
+              current.studentId == row.studentId) {
+            _rows[i] = checked.first;
+            break;
+          }
+        }
+      }
+
+      setState(() {
+        _refreshDerivedData(resetPage: false);
+        _status = result.message;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _status = 'Insert grade failed: $error');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isBusy = false;
+          _operationLabel = '';
+          _operationDone = 0;
+          _operationTotal = 0;
+        });
+      }
+    }
+  }
 
   String _normalizeYearLevelLabel(String value) {
     final raw = value.trim();
@@ -922,159 +1256,360 @@ class _GradesCheckerPageState extends State<GradesCheckerPage> {
     _openStudentDetails(group);
   }
 
+  DateTime? _parseFlexibleDate(String value) {
+    final raw = value.trim();
+    if (raw.isEmpty) return null;
+
+    final numeric = double.tryParse(raw);
+    if (numeric != null && numeric > 20000 && numeric < 80000) {
+      return DateTime.utc(1899, 12, 30).add(Duration(days: numeric.floor())).toLocal();
+    }
+
+    final iso = RegExp(r'^(\d{4})[-/](\d{1,2})[-/](\d{1,2})').firstMatch(raw);
+    if (iso != null) {
+      return DateTime.tryParse('${iso.group(1)!}-${iso.group(2)!.padLeft(2, '0')}-${iso.group(3)!.padLeft(2, '0')}');
+    }
+
+    final slash = RegExp(r'^(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})$').firstMatch(raw);
+    if (slash != null) {
+      final month = int.tryParse(slash.group(1)!);
+      final day = int.tryParse(slash.group(2)!);
+      var year = int.tryParse(slash.group(3)!);
+      if (year != null && year < 100) year += year >= 50 ? 1900 : 2000;
+      if (month != null && day != null && year != null) {
+        return DateTime.tryParse('${year.toString().padLeft(4, '0')}-${month.toString().padLeft(2, '0')}-${day.toString().padLeft(2, '0')}');
+      }
+    }
+
+    return DateTime.tryParse(raw);
+  }
+
+  String _formatDateIso(DateTime? date) {
+    if (date == null) return '';
+    return '${date.year.toString().padLeft(4, '0')}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+  }
+
+  List<CourseOption> _filterCourses(List<CourseOption> courses, String query) {
+    final q = _courseCompareKey(query);
+    if (q.isEmpty) return courses;
+    return courses.where((course) {
+      return _courseCompareKey('${course.code} ${course.name} ${course.major} ${course.status}').contains(q);
+    }).toList(growable: false);
+  }
+
+  Widget _sectionLabel(String text, IconData icon) {
+    return Padding(
+      padding: EdgeInsets.only(bottom: _s(7)),
+      child: Row(
+        children: [
+          Icon(icon, size: 17, color: const Color(0xFF2563EB)),
+          SizedBox(width: _s(6)),
+          Text(text, style: const TextStyle(fontSize: _kHeaderFontSize, fontWeight: FontWeight.w900, color: Color(0xFF0F172A))),
+        ],
+      ),
+    );
+  }
+
   void _openStudentProfileForm(_StudentGradeGroup group) {
     final studentIdController = TextEditingController(text: group.studentId);
     final lastNameController = TextEditingController(text: group.lastName);
     final firstNameController = TextEditingController(text: group.firstName);
     final middleNameController = TextEditingController(text: group.middleName);
-    final birthDateController = TextEditingController(text: group.birthDate);
+    final courseSearchController = TextEditingController(text: group.course);
+    DateTime? selectedBirthDate = _parseFlexibleDate(group.birthDate);
     var selectedYear = _normalizeYearLevelLabel(group.yearLevel);
     var selectedGender = 'Male';
     CourseOption? selectedCourse;
     var saving = false;
     final coursesFuture = _api.fetchCourses();
+    const profileFieldStyle = TextStyle(fontSize: _kBodyFontSize, color: Color(0xFF0F172A), fontWeight: FontWeight.w700);
+    const profileSmallStyle = TextStyle(fontSize: _kTableFontSize, color: Color(0xFF64748B), fontWeight: FontWeight.w700);
 
     showDialog<void>(
       context: context,
       builder: (dialogContext) {
         return StatefulBuilder(
           builder: (context, setDialogState) {
-            return AlertDialog(
-              title: const Text('Create student profile'),
-              content: SizedBox(
-                width: _s(720),
-                child: SingleChildScrollView(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      const Text(
-                        'Review and update the UNO details before saving to tbl_student.',
-                        style: TextStyle(fontSize: _kBodyFontSize, color: Color(0xFF64748B)),
+            Future<void> pickBirthdate() async {
+              final now = DateTime.now();
+              final initialDate = selectedBirthDate ?? DateTime(now.year - 18, now.month, now.day);
+              final picked = await showDatePicker(
+                context: dialogContext,
+                initialDate: initialDate.isAfter(DateTime.now()) ? DateTime(now.year - 18, now.month, now.day) : initialDate,
+                firstDate: DateTime(1900),
+                lastDate: DateTime.now(),
+                helpText: 'Select birthdate',
+              );
+              if (picked != null) {
+                setDialogState(() => selectedBirthDate = picked);
+              }
+            }
+
+            return Dialog(
+              insetPadding: EdgeInsets.symmetric(horizontal: _s(22), vertical: _s(18)),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.only(bottomLeft: Radius.circular(_s(18)), bottomRight: Radius.circular(_s(18)))),
+              child: ConstrainedBox(
+                constraints: BoxConstraints(maxWidth: _s(860), maxHeight: MediaQuery.of(context).size.height * 0.90),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      padding: EdgeInsets.fromLTRB(_s(16), _s(14), _s(12), _s(10)),
+                      decoration: const BoxDecoration(
+                        color: Color(0xFFF8FAFC),
+                        border: Border(bottom: BorderSide(color: Color(0xFFE2E8F0))),
                       ),
-                      SizedBox(height: _s(12)),
-                      TextField(
-                        controller: studentIdController,
-                        enabled: !saving,
-                        decoration: const InputDecoration(labelText: 'Student ID'),
-                      ),
-                      SizedBox(height: _s(8)),
-                      Row(
+                      child: Row(
                         children: [
-                          Expanded(child: TextField(controller: lastNameController, enabled: !saving, decoration: const InputDecoration(labelText: 'Last name'))),
-                          SizedBox(width: _s(8)),
-                          Expanded(child: TextField(controller: firstNameController, enabled: !saving, decoration: const InputDecoration(labelText: 'First name'))),
-                          SizedBox(width: _s(8)),
-                          Expanded(child: TextField(controller: middleNameController, enabled: !saving, decoration: const InputDecoration(labelText: 'Middle name'))),
-                        ],
-                      ),
-                      SizedBox(height: _s(8)),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: DropdownButtonFormField<String>(
-                              value: selectedYear,
-                              decoration: const InputDecoration(labelText: 'Year level'),
-                              items: const ['1st Year', '2nd Year', '3rd Year', '4th Year']
-                                  .map((year) => DropdownMenuItem(value: year, child: Text(year)))
-                                  .toList(),
-                              onChanged: saving ? null : (value) => setDialogState(() => selectedYear = value ?? '1st Year'),
+                          Container(
+                            width: _s(34),
+                            height: _s(34),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF2563EB).withOpacity(0.10),
+                              borderRadius: BorderRadius.circular(_s(13)),
+                            ),
+                            child: const Icon(Icons.person_add_alt_1_rounded, color: Color(0xFF2563EB), size: 18),
+                          ),
+                          SizedBox(width: _s(10)),
+                          const Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text('Create student profile', style: TextStyle(fontSize: _kHeaderFontSize, fontWeight: FontWeight.w900)),
+                                SizedBox(height: 2),
+                                Text('Review and update the UNO student details before saving.', style: TextStyle(fontSize: _kBodyFontSize, color: Color(0xFF64748B))),
+                              ],
                             ),
                           ),
-                          SizedBox(width: _s(8)),
-                          Expanded(
-                            child: DropdownButtonFormField<String>(
-                              value: selectedGender,
-                              decoration: const InputDecoration(labelText: 'Gender'),
-                              items: const ['Male', 'Female']
-                                  .map((gender) => DropdownMenuItem(value: gender, child: Text(gender)))
-                                  .toList(),
-                              onChanged: saving ? null : (value) => setDialogState(() => selectedGender = value ?? 'Male'),
-                            ),
+                          IconButton(
+                            tooltip: 'Close',
+                            onPressed: saving ? null : () => Navigator.of(dialogContext).pop(),
+                            icon: const Icon(Icons.close_rounded, size: 20),
                           ),
                         ],
                       ),
-                      SizedBox(height: _s(8)),
-                      TextField(
-                        controller: birthDateController,
-                        enabled: !saving,
-                        decoration: const InputDecoration(
-                          labelText: 'Birthdate',
-                          hintText: 'YYYY-MM-DD or MM/DD/YYYY',
-                          prefixIcon: Icon(Icons.cake_rounded, size: 18),
+                    ),
+                    Flexible(
+                      child: SingleChildScrollView(
+                        padding: EdgeInsets.all(_s(14)),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            _sectionLabel('Student information', Icons.badge_rounded),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: TextField(
+                                    controller: studentIdController,
+                                    enabled: !saving,
+                                    style: profileFieldStyle,
+                                    decoration: const InputDecoration(labelText: 'Student ID'),
+                                  ),
+                                ),
+                                SizedBox(width: _s(8)),
+                                Expanded(
+                                  child: DropdownButtonFormField<String>(
+                                    value: selectedYear,
+                                    style: profileFieldStyle,
+                                    decoration: const InputDecoration(labelText: 'Year level'),
+                                    items: const ['1st Year', '2nd Year', '3rd Year', '4th Year']
+                                        .map((year) => DropdownMenuItem(value: year, child: Text(year, style: profileFieldStyle)))
+                                        .toList(),
+                                    onChanged: saving ? null : (value) => setDialogState(() => selectedYear = value ?? '1st Year'),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            SizedBox(height: _s(8)),
+                            Row(
+                              children: [
+                                Expanded(child: TextField(controller: lastNameController, enabled: !saving, style: profileFieldStyle, decoration: const InputDecoration(labelText: 'Last name'))),
+                                SizedBox(width: _s(8)),
+                                Expanded(child: TextField(controller: firstNameController, enabled: !saving, style: profileFieldStyle, decoration: const InputDecoration(labelText: 'First name'))),
+                                SizedBox(width: _s(8)),
+                                Expanded(child: TextField(controller: middleNameController, enabled: !saving, style: profileFieldStyle, decoration: const InputDecoration(labelText: 'Middle name'))),
+                              ],
+                            ),
+                            SizedBox(height: _s(14)),
+                            _sectionLabel('Personal details', Icons.cake_rounded),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: DropdownButtonFormField<String>(
+                                    value: selectedGender,
+                                    style: profileFieldStyle,
+                                    decoration: const InputDecoration(labelText: 'Gender'),
+                                    items: const ['Male', 'Female']
+                                        .map((gender) => DropdownMenuItem(value: gender, child: Text(gender, style: profileFieldStyle)))
+                                        .toList(),
+                                    onChanged: saving ? null : (value) => setDialogState(() => selectedGender = value ?? 'Male'),
+                                  ),
+                                ),
+                                SizedBox(width: _s(8)),
+                                Expanded(
+                                  child: InkWell(
+                                    onTap: saving ? null : pickBirthdate,
+                                    borderRadius: BorderRadius.circular(_s(10)),
+                                    child: InputDecorator(
+                                      decoration: InputDecoration(
+                                        labelText: 'Birthdate',
+                                        hintText: '(YYYY-MM-DD)',
+                                        prefixIcon: const Icon(Icons.calendar_month_rounded, size: 18),
+                                        suffixIcon: IconButton(
+                                          tooltip: 'Pick date',
+                                          onPressed: saving ? null : pickBirthdate,
+                                          icon: const Icon(Icons.edit_calendar_rounded, size: 18),
+                                        ),
+                                      ),
+                                      child: Text(
+                                        selectedBirthDate == null ? '(YYYY-MM-DD)' : _formatDateIso(selectedBirthDate),
+                                        style: TextStyle(
+                                          fontSize: _kBodyFontSize,
+                                          fontWeight: FontWeight.w700,
+                                          color: selectedBirthDate == null ? const Color(0xFF94A3B8) : const Color(0xFF0F172A),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            if (group.birthDate.trim().isNotEmpty) ...[
+                              SizedBox(height: _s(5)),
+                              Text('UNO birthdate: ${group.birthDate} → ${selectedBirthDate == null ? 'not recognized' : _formatDateIso(selectedBirthDate)}', style: profileSmallStyle),
+                            ],
+                            SizedBox(height: _s(14)),
+                            _sectionLabel('Course', Icons.school_rounded),
+                            FutureBuilder<List<CourseOption>>(
+                              future: coursesFuture,
+                              builder: (context, snapshot) {
+                                final courses = snapshot.data ?? const <CourseOption>[];
+                                if (selectedCourse == null && courses.isNotEmpty) {
+                                  selectedCourse = _bestCourseForExcel(group.course, courses);
+                                }
+                                if (snapshot.connectionState != ConnectionState.done) {
+                                  return const LinearProgressIndicator(minHeight: 3);
+                                }
+                                if (snapshot.hasError) {
+                                  return Text('Unable to load course choices: ${snapshot.error}', style: const TextStyle(color: Color(0xFF991B1B), fontSize: _kBodyFontSize, fontWeight: FontWeight.w700));
+                                }
+
+                                final filteredCourses = _filterCourses(courses, courseSearchController.text);
+                                if (selectedCourse != null && !filteredCourses.any((course) => course.id == selectedCourse!.id) && filteredCourses.isNotEmpty) {
+                                  selectedCourse = filteredCourses.first;
+                                }
+                                final dropdownCourseValue = selectedCourse != null && filteredCourses.any((course) => course.id == selectedCourse!.id)
+                                    ? selectedCourse!.id
+                                    : null;
+
+                                return Column(
+                                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                                  children: [
+                                    TextField(
+                                      controller: courseSearchController,
+                                      enabled: !saving,
+                                      style: profileFieldStyle,
+                                      onChanged: (_) => setDialogState(() {}),
+                                      decoration: InputDecoration(
+                                        labelText: 'Search course',
+                                        hintText: 'Search course code or name',
+                                        helperText: group.course.trim().isEmpty ? null : 'From UNO: ${group.course}',
+                                        prefixIcon: const Icon(Icons.search_rounded, size: 18),
+                                        suffixIcon: courseSearchController.text.trim().isEmpty
+                                            ? null
+                                            : IconButton(
+                                                tooltip: 'Clear search',
+                                                onPressed: saving
+                                                    ? null
+                                                    : () => setDialogState(() {
+                                                          courseSearchController.clear();
+                                                          selectedCourse = _bestCourseForExcel(group.course, courses);
+                                                        }),
+                                                icon: const Icon(Icons.clear_rounded, size: 18),
+                                              ),
+                                      ),
+                                    ),
+                                    SizedBox(height: _s(8)),
+                                    DropdownButtonFormField<String>(
+                                      value: dropdownCourseValue,
+                                      isExpanded: true,
+                                      style: profileFieldStyle,
+                                      decoration: InputDecoration(
+                                        labelText: 'Course',
+                                        helperText: filteredCourses.isEmpty ? 'No course matched your search.' : '${filteredCourses.length} course option(s)',
+                                      ),
+                                      items: filteredCourses
+                                          .map((course) => DropdownMenuItem(
+                                                value: course.id,
+                                                child: Text(course.displayLabel, overflow: TextOverflow.ellipsis, style: profileFieldStyle),
+                                              ))
+                                          .toList(),
+                                      onChanged: saving
+                                          ? null
+                                          : (courseId) => setDialogState(() {
+                                                selectedCourse = _courseById(courses, courseId);
+                                              }),
+                                    ),
+                                  ],
+                                );
+                              },
+                            ),
+                          ],
                         ),
                       ),
-                      SizedBox(height: _s(8)),
-                      FutureBuilder<List<CourseOption>>(
-                        future: coursesFuture,
-                        builder: (context, snapshot) {
-                          final courses = snapshot.data ?? const <CourseOption>[];
-                          if (selectedCourse == null && courses.isNotEmpty) {
-                            selectedCourse = _bestCourseForExcel(group.course, courses);
-                          }
-                          if (snapshot.connectionState != ConnectionState.done) {
-                            return const LinearProgressIndicator(minHeight: 3);
-                          }
-                          if (snapshot.hasError) {
-                            return Text('Unable to load tbl_course choices: ${snapshot.error}', style: const TextStyle(color: Color(0xFF991B1B), fontSize: _kBodyFontSize));
-                          }
-                          return DropdownButtonFormField<String>(
-                            value: selectedCourse?.id,
-                            isExpanded: true,
-                            decoration: InputDecoration(
-                              labelText: 'Course from tbl_course',
-                              helperText: group.course.trim().isEmpty ? null : 'UNO course: ${group.course}',
-                            ),
-                            items: courses
-                                .map((course) => DropdownMenuItem(
-                                      value: course.id,
-                                      child: Text(course.displayLabel, overflow: TextOverflow.ellipsis),
-                                    ))
-                                .toList(),
-                            onChanged: saving
+                    ),
+                    Container(
+                      padding: EdgeInsets.fromLTRB(_s(16), _s(8), _s(16), _s(12)),
+                      decoration: const BoxDecoration(border: Border(top: BorderSide(color: Color(0xFFE2E8F0)))),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: saving
+                                ? const Text('Saving profile...', style: TextStyle(fontSize: _kBodyFontSize, color: Color(0xFF64748B), fontWeight: FontWeight.w700))
+                                : const SizedBox.shrink(),
+                          ),
+                          TextButton(
+                            onPressed: saving ? null : () => Navigator.of(dialogContext).pop(),
+                            style: TextButton.styleFrom(textStyle: const TextStyle(fontSize: _kBodyFontSize, fontWeight: FontWeight.w800)),
+                            child: const Text('Cancel'),
+                          ),
+                          SizedBox(width: _s(8)),
+                          FilledButton.icon(
+                            onPressed: saving
                                 ? null
-                                : (courseId) => setDialogState(() {
-                                      selectedCourse = _courseById(courses, courseId);
-                                    }),
-                          );
-                        },
+                                : () async {
+                                    final studentId = studentIdController.text.trim();
+                                    final firstName = firstNameController.text.trim();
+                                    final lastName = lastNameController.text.trim();
+                                    if (studentId.isEmpty || firstName.isEmpty || lastName.isEmpty) {
+                                      setState(() => _status = 'Student ID, first name, and last name are required.');
+                                      return;
+                                    }
+                                    setDialogState(() => saving = true);
+                                    Navigator.of(dialogContext).pop();
+                                    await _createStudentProfileFromGroup(
+                                      group,
+                                      studentId: studentId,
+                                      firstName: firstName,
+                                      middleName: middleNameController.text.trim(),
+                                      lastName: lastName,
+                                      yearLevel: selectedYear,
+                                      course: selectedCourse?.code ?? group.course,
+                                      courseId: selectedCourse?.id ?? '',
+                                      gender: selectedGender,
+                                      birthDate: _formatDateIso(selectedBirthDate),
+                                    );
+                                  },
+                            style: FilledButton.styleFrom(textStyle: const TextStyle(fontSize: _kBodyFontSize, fontWeight: FontWeight.w800)),
+                            icon: saving ? SizedBox(width: _s(14), height: _s(14), child: const CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.save_rounded, size: 17),
+                            label: Text(saving ? 'Saving...' : 'Save profile'),
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
               ),
-              actions: [
-                TextButton(onPressed: saving ? null : () => Navigator.of(dialogContext).pop(), child: const Text('Cancel')),
-                FilledButton.icon(
-                  onPressed: saving
-                      ? null
-                      : () async {
-                          final studentId = studentIdController.text.trim();
-                          final firstName = firstNameController.text.trim();
-                          final lastName = lastNameController.text.trim();
-                          if (studentId.isEmpty || firstName.isEmpty || lastName.isEmpty) {
-                            setState(() => _status = 'Student ID, first name, and last name are required.');
-                            return;
-                          }
-                          setDialogState(() => saving = true);
-                          Navigator.of(dialogContext).pop();
-                          await _createStudentProfileFromGroup(
-                            group,
-                            studentId: studentId,
-                            firstName: firstName,
-                            middleName: middleNameController.text.trim(),
-                            lastName: lastName,
-                            yearLevel: selectedYear,
-                            course: selectedCourse?.code ?? group.course,
-                            courseId: selectedCourse?.id ?? '',
-                            gender: selectedGender,
-                            birthDate: birthDateController.text.trim(),
-                          );
-                        },
-                  icon: saving ? SizedBox(width: _s(14), height: _s(14), child: const CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.save_rounded, size: 18),
-                  label: Text(saving ? 'Saving...' : 'Save profile'),
-                ),
-              ],
             );
           },
         );
@@ -1084,7 +1619,7 @@ class _GradesCheckerPageState extends State<GradesCheckerPage> {
       lastNameController.dispose();
       firstNameController.dispose();
       middleNameController.dispose();
-      birthDateController.dispose();
+      courseSearchController.dispose();
     });
   }
 
@@ -1096,74 +1631,66 @@ class _GradesCheckerPageState extends State<GradesCheckerPage> {
     showDialog<void>(
       context: context,
       builder: (dialogContext) {
-        return AlertDialog(
-          titlePadding: EdgeInsets.fromLTRB(_s(20), _s(16), _s(20), _s(8)),
-          contentPadding: EdgeInsets.fromLTRB(_s(20), 0, _s(20), _s(14)),
-          title: Row(
+        return _ModernDialogScaffold(
+          title: group.studentName,
+          subtitle: studentMissing ? 'Review UNO details and create the student profile if needed.' : 'Student profile matched in SMS.',
+          icon: studentMissing ? Icons.person_add_alt_1_rounded : Icons.person_rounded,
+          iconColor: visual.color,
+          width: 720,
+          maxHeightFactor: 0.88,
+          onClose: () => Navigator.of(dialogContext).pop(),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Container(width: _s(10), height: _s(10), decoration: BoxDecoration(color: visual.color, shape: BoxShape.circle)),
-              SizedBox(width: _s(10)),
-              Expanded(child: Text(group.studentName, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: _kHeaderFontSize))),
-            ],
-          ),
-          content: SizedBox(
-            width: _s(640),
-            child: SingleChildScrollView(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
+              Wrap(
+                spacing: _s(8),
+                runSpacing: _s(8),
                 children: [
-                  Wrap(
-                    spacing: _s(8),
-                    runSpacing: _s(8),
-                    children: [
-                      _DetailPill(label: 'Student ID', value: group.studentId.isEmpty ? '-' : group.studentId, color: const Color(0xFF2563EB)),
-                      _DetailPill(label: 'Course', value: group.course.isEmpty ? '-' : group.course, color: const Color(0xFF334155)),
-                      _DetailPill(label: 'Year', value: group.yearLevel.isEmpty ? '-' : group.yearLevel, color: const Color(0xFF334155)),
-                      _DetailPill(label: 'Birthdate', value: group.birthDate.isEmpty ? '-' : group.birthDate, color: const Color(0xFF334155)),
-                      _DetailPill(label: 'Subjects', value: group.rows.length.toString(), color: visual.color),
-                    ],
-                  ),
-                  SizedBox(height: _s(12)),
-                  Container(
-                    padding: EdgeInsets.all(_s(10)),
-                    decoration: BoxDecoration(
-                      color: visual.background,
-                      borderRadius: BorderRadius.circular(_s(12)),
-                      border: Border.all(color: visual.border),
-                    ),
-                    child: Text(
-                      studentMissing
-                          ? (canCreate
-                              ? 'This student was not found in tbl_student. You can create a basic student profile from the UNO row details, then run Check again.'
-                              : 'This student was not found. Open the profile form and complete any missing Student ID, first name, or last name before saving.')
-                          : 'Student was matched in tbl_student. Tap a subject cell to inspect grade and subject details.',
-                      style: TextStyle(color: visual.color, fontWeight: FontWeight.w800, fontSize: _kBodyFontSize),
-                    ),
-                  ),
-                  SizedBox(height: _s(12)),
-                  const Text('UNO row details', style: TextStyle(fontWeight: FontWeight.w900, fontSize: _kHeaderFontSize)),
-                  SizedBox(height: _s(8)),
-                  Table(
-                    border: const TableBorder(
-                      horizontalInside: BorderSide(color: Color(0xFFE2E8F0)),
-                      verticalInside: BorderSide(color: Color(0xFFE2E8F0)),
-                      top: BorderSide(color: Color(0xFFE2E8F0)),
-                      bottom: BorderSide(color: Color(0xFFE2E8F0)),
-                      left: BorderSide(color: Color(0xFFE2E8F0)),
-                      right: BorderSide(color: Color(0xFFE2E8F0)),
-                    ),
-                    columnWidths: const {0: FixedColumnWidth(120), 1: FlexColumnWidth()},
-                    children: [
-                      _detailRow('Last name', group.lastName),
-                      _detailRow('First name', group.firstName),
-                      _detailRow('Middle name', group.middleName),
-                      _detailRow('Birthdate', group.birthDate),
-                      _detailRow('Excel row', group.excelRowNumber.toString()),
-                    ],
-                  ),
+                  _DetailPill(label: 'Student ID', value: group.studentId.isEmpty ? '-' : group.studentId, color: const Color(0xFF2563EB)),
+                  _DetailPill(label: 'Course', value: group.course.isEmpty ? '-' : group.course, color: const Color(0xFF334155)),
+                  _DetailPill(label: 'Year', value: group.yearLevel.isEmpty ? '-' : group.yearLevel, color: const Color(0xFF334155)),
+                  _DetailPill(label: 'Birthdate', value: group.birthDate.isEmpty ? '-' : group.birthDate, color: const Color(0xFF334155)),
+                  _DetailPill(label: 'Subjects', value: group.rows.length.toString(), color: visual.color),
                 ],
               ),
-            ),
+              SizedBox(height: _s(12)),
+              Container(
+                padding: EdgeInsets.all(_s(12)),
+                decoration: BoxDecoration(
+                  color: visual.background,
+                  borderRadius: BorderRadius.circular(_s(14)),
+                  border: Border.all(color: visual.border),
+                ),
+                child: Text(
+                  studentMissing
+                      ? (canCreate
+                          ? 'This student was not found in the student records. You can create a student profile from the UNO row details, then run Check again.'
+                          : 'This student was not found. Open the profile form and complete any missing Student ID, first name, or last name before saving.')
+                      : 'Student was matched in the student records. Tap a subject cell to inspect grade and subject details.',
+                  style: TextStyle(color: visual.color, fontWeight: FontWeight.w800, fontSize: _kBodyFontSize),
+                ),
+              ),
+              SizedBox(height: _s(12)),
+              _sectionLabel('UNO row details', Icons.assignment_ind_rounded),
+              Table(
+                border: const TableBorder(
+                  horizontalInside: BorderSide(color: Color(0xFFE2E8F0)),
+                  verticalInside: BorderSide(color: Color(0xFFE2E8F0)),
+                  top: BorderSide(color: Color(0xFFE2E8F0)),
+                  bottom: BorderSide(color: Color(0xFFE2E8F0)),
+                  left: BorderSide(color: Color(0xFFE2E8F0)),
+                  right: BorderSide(color: Color(0xFFE2E8F0)),
+                ),
+                columnWidths: const {0: FixedColumnWidth(120), 1: FlexColumnWidth()},
+                children: [
+                  _detailRow('Last name', group.lastName),
+                  _detailRow('First name', group.firstName),
+                  _detailRow('Middle name', group.middleName),
+                  _detailRow('Birthdate', group.birthDate),
+                  _detailRow('UNO row', group.excelRowNumber.toString()),
+                ],
+              ),
+            ],
           ),
           actions: [
             TextButton(onPressed: () => Navigator.of(dialogContext).pop(), child: const Text('Close')),
@@ -1222,7 +1749,7 @@ class _GradesCheckerPageState extends State<GradesCheckerPage> {
       _operationLabel = 'Creating student profile';
       _operationDone = 0;
       _operationTotal = 0;
-      _status = 'Creating $finalLastName, $finalFirstName in tbl_student...';
+      _status = 'Creating $finalLastName, $finalFirstName in the student records...';
     });
 
     try {
@@ -1441,7 +1968,7 @@ class _GradesCheckerPageState extends State<GradesCheckerPage> {
               Text('UNO to SMS Grade Checker', style: TextStyle(fontSize: _kHeaderFontSize, fontWeight: FontWeight.w900)),
               SizedBox(height: 2),
               Text(
-                'Cross-check legacy UNO promotional-list grades against current SMS Database grade records.',
+                'Cross-check legacy UNO promotional-list grades against current SMS grade records.',
                 style: TextStyle(color: Color(0xFF64748B), fontSize: _kBodyFontSize),
               ),
             ],
@@ -1538,7 +2065,7 @@ class _GradesCheckerPageState extends State<GradesCheckerPage> {
                       child: FilledButton.icon(
                         onPressed: _isBusy ? null : _pickExcel,
                         icon: const Icon(Icons.upload_file_rounded, size: 16),
-                        label: const Text('Upload Excel', maxLines: 1, overflow: TextOverflow.ellipsis),
+                        label: const Text('Upload UNO', maxLines: 1, overflow: TextOverflow.ellipsis),
                         style: FilledButton.styleFrom(
                           padding: EdgeInsets.symmetric(horizontal: _s(12)),
                           textStyle: const TextStyle(fontSize: _kBodyFontSize, fontWeight: FontWeight.w800),
@@ -1562,22 +2089,33 @@ class _GradesCheckerPageState extends State<GradesCheckerPage> {
                       child: OutlinedButton.icon(
                         onPressed: _isBusy || _rows.isEmpty ? null : _exportExcel,
                         icon: const Icon(Icons.file_download_rounded, size: 16),
-                        label: const Text('Export Excel', maxLines: 1, overflow: TextOverflow.ellipsis),
+                        label: const Text('Export Report', maxLines: 1, overflow: TextOverflow.ellipsis),
                         style: buttonStyle,
                       ),
                     );
 
                 if (constraints.maxWidth < _s(900)) {
+                  final stackAcademicAndCheck = constraints.maxWidth < _s(520);
                   return Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      SizedBox(height: controlHeight, child: _buildPeriodSelector()),
+                      if (stackAcademicAndCheck) ...[
+                        SizedBox(height: controlHeight, child: _buildPeriodSelector()),
+                        SizedBox(height: _s(8)),
+                        checkButton(),
+                      ] else ...[
+                        Row(
+                          children: [
+                            Expanded(child: SizedBox(height: controlHeight, child: _buildPeriodSelector())),
+                            SizedBox(width: _s(8)),
+                            SizedBox(width: _s(104), child: checkButton()),
+                          ],
+                        ),
+                      ],
                       SizedBox(height: _s(8)),
                       Row(
                         children: [
                           Expanded(child: uploadButton()),
-                          SizedBox(width: _s(8)),
-                          Expanded(child: checkButton()),
                           SizedBox(width: _s(8)),
                           Expanded(child: exportButton()),
                         ],
@@ -1589,19 +2127,18 @@ class _GradesCheckerPageState extends State<GradesCheckerPage> {
                 final uploadWidth = constraints.maxWidth < _s(1120) ? _s(168) : _s(178);
                 final checkWidth = constraints.maxWidth < _s(1120) ? _s(96) : _s(104);
                 final exportWidth = constraints.maxWidth < _s(1120) ? _s(138) : _s(150);
-                final actionWidth = uploadWidth + checkWidth + exportWidth + _s(32);
+                final rightActionWidth = uploadWidth + exportWidth + _s(16);
                 final periodWidth = math
-                    .min(_s(500), math.max(_s(330), constraints.maxWidth - actionWidth - _s(24)))
+                    .min(_s(500), math.max(_s(330), constraints.maxWidth - rightActionWidth - checkWidth - _s(48)))
                     .toDouble();
                 return Row(
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
                     SizedBox(width: periodWidth, height: controlHeight, child: _buildPeriodSelector()),
-                    const Spacer(),
-                    SizedBox(width: _s(8)),
-                    uploadButton(width: uploadWidth),
                     SizedBox(width: _s(8)),
                     checkButton(width: checkWidth),
+                    const Spacer(),
+                    uploadButton(width: uploadWidth),
                     SizedBox(width: _s(8)),
                     exportButton(width: exportWidth),
                   ],
@@ -1782,7 +2319,7 @@ class _GradesCheckerPageState extends State<GradesCheckerPage> {
       _MetricCard(label: 'Existing', value: _existingCount.toString(), icon: Icons.verified_rounded),
       _MetricCard(label: 'Missing', value: _missingCount.toString(), icon: Icons.remove_circle_outline_rounded),
       _MetricCard(label: 'Diffs', value: (_gradeDiffCount + _unitsDiffCount).toString(), icon: Icons.compare_arrows_rounded),
-      _MetricCard(label: 'Duplicate DB', value: _duplicateGradeCount.toString(), icon: Icons.control_point_duplicate_rounded),
+      _MetricCard(label: 'Duplicate SMS', value: _duplicateGradeCount.toString(), icon: Icons.control_point_duplicate_rounded),
     ];
 
     return LayoutBuilder(
@@ -2004,7 +2541,16 @@ class _GradesCheckerPageState extends State<GradesCheckerPage> {
             ],
           );
         }
-        return Row(children: [Flexible(child: pageTools), const Spacer(), interpretationButton]);
+        return SizedBox(
+          width: double.infinity,
+          child: Row(
+            children: [
+              Expanded(child: SingleChildScrollView(scrollDirection: Axis.horizontal, child: pageTools)),
+              SizedBox(width: _s(12)),
+              interpretationButton,
+            ],
+          ),
+        );
       },
     );
   }
@@ -2081,7 +2627,7 @@ class _GradesCheckerPageState extends State<GradesCheckerPage> {
       _LegendItem('Units differ', _StatusVisual.unitsDiff.color),
       _LegendItem('Student not found', _StatusVisual.studentMissing.color),
       _LegendItem('Subject not found', _StatusVisual.subjectMissing.color),
-      _LegendItem('Duplicate DB grades', _StatusVisual.duplicate.color),
+      _LegendItem('Duplicate SMS grades', _StatusVisual.duplicate.color),
       _LegendItem('Unchecked', _StatusVisual.unchecked.color),
     ];
     return Wrap(spacing: _s(10), runSpacing: _s(7), children: items);
@@ -2101,7 +2647,7 @@ class _GradesCheckerPageState extends State<GradesCheckerPage> {
               child: const Icon(Icons.upload_file_rounded, size: 34, color: Color(0xFF2563EB)),
             ),
             SizedBox(height: _s(9)),
-            const Text('No Excel rows loaded yet', style: TextStyle(fontSize: _kHeaderFontSize, fontWeight: FontWeight.w900)),
+            const Text('No UNO rows loaded yet', style: TextStyle(fontSize: _kHeaderFontSize, fontWeight: FontWeight.w900)),
             SizedBox(height: _s(4)),
             const Text('Upload the UNO promotional list to preview and check grades.', style: TextStyle(color: Color(0xFF64748B), fontSize: _kBodyFontSize)),
           ],
@@ -2116,69 +2662,166 @@ class _GradesCheckerPageState extends State<GradesCheckerPage> {
       );
     }
 
-    _queueHorizontalMetricSync();
-    return NotificationListener<ScrollNotification>(
-      onNotification: (notification) {
-        if (notification.metrics.axis == Axis.horizontal) {
-          _queueHorizontalMetricSync();
-        }
-        return false;
-      },
-      child: SingleChildScrollView(
-        controller: _horizontalController,
-        scrollDirection: Axis.horizontal,
-        padding: EdgeInsets.all(_s(8)),
-        child: RepaintBoundary(child: _StudentGradeTable(groups: groups, onSubjectTap: _openSubjectDetails, onStudentTap: _handleStudentTap)),
-      ),
+    return SingleChildScrollView(
+      controller: _horizontalController,
+      scrollDirection: Axis.horizontal,
+      padding: EdgeInsets.all(_s(8)),
+      child: RepaintBoundary(child: _StudentGradeTable(groups: groups, onSubjectTap: _openSubjectDetails, onStudentTap: _handleStudentTap)),
     );
   }
 
   Widget _buildStickyHorizontalScrollBar() {
-    final max = _horizontalMaxExtent;
-    final offset = _horizontalPixels.clamp(0.0, max).toDouble();
-    final canScroll = max > 0.5;
-
-    void jumpTo(double next) {
-      if (!_horizontalController.hasClients || !canScroll) return;
-      _horizontalController.jumpTo(next.clamp(0.0, max).toDouble());
-      _queueHorizontalMetricSync();
-    }
-
     return SafeArea(
       top: false,
       child: Container(
-        height: _s(40),
-        padding: EdgeInsets.symmetric(horizontal: _s(12), vertical: _s(4)),
+        height: _s(20),
+        padding: EdgeInsets.symmetric(horizontal: _s(10), vertical: _s(2)),
         decoration: const BoxDecoration(
           color: Colors.white,
           border: Border(top: BorderSide(color: Color(0xFFE2E8F0))),
-          boxShadow: [BoxShadow(color: Color(0x12000000), blurRadius: 10, offset: Offset(0, -3))],
+          boxShadow: [BoxShadow(color: Color(0x0F000000), blurRadius: 8, offset: Offset(0, -2))],
         ),
-        child: Row(
+        child: AnimatedBuilder(
+          animation: _horizontalController,
+          builder: (context, _) {
+            final position = _horizontalController.hasClients ? _horizontalController.position : null;
+            final max = position == null ? 0.0 : math.max(0.0, _safeScrollMetric(position.maxScrollExtent));
+            final viewport = position == null ? 1.0 : math.max(1.0, _safeScrollMetric(position.viewportDimension, fallback: 1.0));
+            final offset = position == null ? 0.0 : _safeScrollMetric(position.pixels).clamp(0.0, max).toDouble();
+            final canScroll = max > 0.5;
+
+            void jumpTo(double next) {
+              if (!_horizontalController.hasClients || !canScroll) return;
+              _horizontalController.jumpTo(next.clamp(0.0, max).toDouble());
+            }
+
+            return Row(
+              children: [
+                IconButton(
+                  tooltip: 'Scroll left',
+                  onPressed: !canScroll || offset <= 0 ? null : () => jumpTo(offset - 420),
+                  icon: const Icon(Icons.keyboard_arrow_left_rounded, size: 15),
+                  constraints: BoxConstraints.tightFor(width: _s(18), height: _s(18)),
+                  padding: EdgeInsets.zero,
+                ),
+                Expanded(
+                  child: _RoundedHorizontalScrollControl(
+                    offset: offset,
+                    max: max,
+                    viewport: viewport,
+                    onChanged: jumpTo,
+                  ),
+                ),
+                IconButton(
+                  tooltip: 'Scroll right',
+                  onPressed: !canScroll || offset >= max ? null : () => jumpTo(offset + 420),
+                  icon: const Icon(Icons.keyboard_arrow_right_rounded, size: 15),
+                  constraints: BoxConstraints.tightFor(width: _s(18), height: _s(18)),
+                  padding: EdgeInsets.zero,
+                ),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+
+
+class _ModernDialogScaffold extends StatelessWidget {
+  const _ModernDialogScaffold({
+    required this.title,
+    required this.child,
+    required this.actions,
+    required this.onClose,
+    this.subtitle = '',
+    this.icon = Icons.info_outline_rounded,
+    this.iconColor = const Color(0xFF2563EB),
+    this.width = 720,
+    this.maxHeightFactor = 0.90,
+  });
+
+  final String title;
+  final String subtitle;
+  final IconData icon;
+  final Color iconColor;
+  final Widget child;
+  final List<Widget> actions;
+  final VoidCallback onClose;
+  final double width;
+  final double maxHeightFactor;
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      insetPadding: EdgeInsets.symmetric(horizontal: _s(22), vertical: _s(18)),
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.only(bottomLeft: Radius.circular(_s(18)), bottomRight: Radius.circular(_s(18))),
+      ),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxWidth: _s(width), maxHeight: MediaQuery.of(context).size.height * maxHeightFactor),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.swap_horiz_rounded, size: 16, color: Color(0xFF2563EB)),
-            SizedBox(width: _s(8)),
-            IconButton(
-              tooltip: 'Scroll left',
-              onPressed: !canScroll || offset <= 0 ? null : () => jumpTo(offset - 420),
-              icon: const Icon(Icons.keyboard_arrow_left_rounded, size: 18),
-              constraints: BoxConstraints.tightFor(width: _s(28), height: _s(28)),
-              padding: EdgeInsets.zero,
-            ),
-            Expanded(
-              child: _RoundedHorizontalScrollControl(
-                offset: offset,
-                max: max,
-                viewport: _horizontalViewportDimension,
-                onChanged: jumpTo,
+            Container(
+              padding: EdgeInsets.fromLTRB(_s(18), _s(16), _s(14), _s(12)),
+              decoration: const BoxDecoration(
+                color: Color(0xFFF8FAFC),
+                border: Border(bottom: BorderSide(color: Color(0xFFE2E8F0))),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    width: _s(38),
+                    height: _s(38),
+                    decoration: BoxDecoration(
+                      color: iconColor.withOpacity(0.10),
+                      borderRadius: BorderRadius.circular(_s(13)),
+                    ),
+                    child: Icon(icon, color: iconColor, size: 20),
+                  ),
+                  SizedBox(width: _s(10)),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: _kHeaderFontSize, fontWeight: FontWeight.w900, color: Color(0xFF0F172A))),
+                        if (subtitle.trim().isNotEmpty) ...[
+                          const SizedBox(height: 2),
+                          Text(subtitle, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: _kBodyFontSize, color: Color(0xFF64748B))),
+                        ],
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Close',
+                    onPressed: onClose,
+                    icon: const Icon(Icons.close_rounded, size: 20),
+                  ),
+                ],
               ),
             ),
-            IconButton(
-              tooltip: 'Scroll right',
-              onPressed: !canScroll || offset >= max ? null : () => jumpTo(offset + 420),
-              icon: const Icon(Icons.keyboard_arrow_right_rounded, size: 18),
-              constraints: BoxConstraints.tightFor(width: _s(28), height: _s(28)),
-              padding: EdgeInsets.zero,
+            Flexible(
+              child: SingleChildScrollView(
+                padding: EdgeInsets.all(_s(18)),
+                child: child,
+              ),
+            ),
+            Container(
+              padding: EdgeInsets.fromLTRB(_s(18), _s(10), _s(18), _s(14)),
+              decoration: const BoxDecoration(border: Border(top: BorderSide(color: Color(0xFFE2E8F0)))) ,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  for (var i = 0; i < actions.length; i++) ...[
+                    if (i > 0) SizedBox(width: _s(8)),
+                    actions[i],
+                  ],
+                ],
+              ),
             ),
           ],
         ),
@@ -2186,7 +2829,6 @@ class _GradesCheckerPageState extends State<GradesCheckerPage> {
     );
   }
 }
-
 
 class _RoundedHorizontalScrollControl extends StatelessWidget {
   const _RoundedHorizontalScrollControl({
@@ -2209,7 +2851,7 @@ class _RoundedHorizontalScrollControl extends StatelessWidget {
         final canScroll = max > 0.5;
         final totalContentWidth = math.max(viewport + max, 1.0);
         final visibleRatio = viewport <= 0 ? 0.25 : (viewport / totalContentWidth).clamp(0.12, 1.0).toDouble();
-        final thumbWidth = canScroll ? math.max(_s(52), trackWidth * visibleRatio) : trackWidth;
+        final thumbWidth = canScroll ? math.max(_s(36), trackWidth * visibleRatio) : trackWidth;
         final travel = math.max(0.0, trackWidth - thumbWidth);
         final thumbLeft = canScroll && max > 0 ? (offset / max).clamp(0.0, 1.0).toDouble() * travel : 0.0;
 
@@ -2229,12 +2871,12 @@ class _RoundedHorizontalScrollControl extends StatelessWidget {
                 }
               : null,
           child: SizedBox(
-            height: _s(24),
+            height: _s(6),
             child: Stack(
               alignment: Alignment.centerLeft,
               children: [
                 Container(
-                  height: _s(10),
+                  height: _s(3),
                   decoration: BoxDecoration(
                     color: const Color(0xFFE2E8F0),
                     borderRadius: BorderRadius.circular(999),
@@ -2244,10 +2886,10 @@ class _RoundedHorizontalScrollControl extends StatelessWidget {
                   left: thumbLeft,
                   child: Container(
                     width: thumbWidth,
-                    height: _s(14),
+                    height: _s(6),
                     decoration: BoxDecoration(
                       color: canScroll ? const Color(0xFF2563EB) : const Color(0xFFCBD5E1),
-                      borderRadius: BorderRadius.circular(_s(7)),
+                      borderRadius: BorderRadius.circular(_s(3)),
                       boxShadow: const [BoxShadow(color: Color(0x1A000000), blurRadius: 6, offset: Offset(0, 1))],
                     ),
                   ),
@@ -2340,7 +2982,7 @@ class _StudentGradeTable extends StatelessWidget {
   final void Function(GradeRow row) onSubjectTap;
   final void Function(_StudentGradeGroup group) onStudentTap;
 
-  static double get tableWidth => _s(258) + _s(174) + (_s(145) * 10);
+  static double get tableWidth => _s(260) + _s(176) + (_s(150) * 10);
 
   @override
   Widget build(BuildContext context) {
@@ -2382,9 +3024,9 @@ class _StudentGradeTable extends StatelessWidget {
 
   static Map<int, TableColumnWidth> _columnWidths() {
     return {
-      0: FixedColumnWidth(_s(250)),
-      1: FixedColumnWidth(_s(166)),
-      for (var i = 2; i <= 11; i++) i: FixedColumnWidth(_s(137)),
+      0: FixedColumnWidth(_s(260)),
+      1: FixedColumnWidth(_s(176)),
+      for (var i = 2; i <= 11; i++) i: FixedColumnWidth(_s(150)),
     };
   }
 
@@ -2405,36 +3047,40 @@ class _StudentGradeTable extends StatelessWidget {
       child: MouseRegion(
         cursor: SystemMouseCursors.click,
         child: Container(
-          constraints: BoxConstraints(minHeight: _s(72)),
-          padding: EdgeInsets.all(_s(7)),
+          height: _s(_kDataRowHeight),
+          padding: EdgeInsets.all(_s(8)),
           child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(width: _s(5), height: _s(52), decoration: BoxDecoration(color: visual.color, borderRadius: BorderRadius.circular(99))),
-          SizedBox(width: _s(9)),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(group.studentName, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: _kTableFontSize)),
-                SizedBox(height: _s(3)),
-                Text('ID: ${group.studentId.isEmpty ? 'N/A' : group.studentId}', style: const TextStyle(color: Color(0xFF64748B), fontSize: _kTableFontSize, fontWeight: FontWeight.w800)),
-                SizedBox(height: _s(4)),
-                Wrap(
-                  spacing: _s(5),
-                  runSpacing: _s(5),
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: _s(5),
+                height: double.infinity,
+                decoration: BoxDecoration(color: visual.color, borderRadius: BorderRadius.circular(99)),
+              ),
+              SizedBox(width: _s(9)),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _SmallBadge(label: '${group.rows.length} subj'),
-                    _SmallBadge(label: '${group.existing} existing'),
-                    if (group.missing > 0) _SmallBadge(label: '${group.missing} missing'),
-                    if (group.gradeDiff + group.unitsDiff > 0) _SmallBadge(label: '${group.gradeDiff + group.unitsDiff} diff'),
-                    if (group.duplicateGrades > 0) _SmallBadge(label: '${group.duplicateGrades} dup'),
+                    Text(group.studentName, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: _kTableFontSize)),
+                    SizedBox(height: _s(3)),
+                    Text('ID: ${group.studentId.isEmpty ? 'N/A' : group.studentId}', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Color(0xFF64748B), fontSize: _kTableFontSize, fontWeight: FontWeight.w800)),
+                    const Spacer(),
+                    Wrap(
+                      spacing: _s(5),
+                      runSpacing: _s(5),
+                      children: [
+                        _SmallBadge(label: '${group.rows.length} subj'),
+                        _SmallBadge(label: '${group.existing} existing'),
+                        if (group.missing > 0) _SmallBadge(label: '${group.missing} missing'),
+                        if (group.gradeDiff + group.unitsDiff > 0) _SmallBadge(label: '${group.gradeDiff + group.unitsDiff} diff'),
+                        if (group.duplicateGrades > 0) _SmallBadge(label: '${group.duplicateGrades} dup'),
+                      ],
+                    ),
                   ],
                 ),
-              ],
-            ),
-          ),
-        ],
+              ),
+            ],
           ),
         ),
       ),
@@ -2443,18 +3089,25 @@ class _StudentGradeTable extends StatelessWidget {
 
   static Widget _courseCell(_StudentGradeGroup group) {
     return Container(
-      constraints: BoxConstraints(minHeight: _s(72)),
-      padding: EdgeInsets.all(_s(7)),
+      height: _s(_kDataRowHeight),
+      padding: EdgeInsets.all(_s(8)),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text('Course', style: TextStyle(fontSize: _kTableFontSize, color: Color(0xFF94A3B8), fontWeight: FontWeight.w900)),
           SizedBox(height: _s(2)),
-          Text(group.course.isEmpty ? '-' : group.course, maxLines: 3, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: _kTableFontSize)),
-          SizedBox(height: _s(8)),
+          Expanded(
+            child: Text(
+              group.course.isEmpty ? '-' : group.course,
+              maxLines: 4,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontWeight: FontWeight.w900, fontSize: _kTableFontSize),
+            ),
+          ),
+          SizedBox(height: _s(6)),
           const Text('Year', style: TextStyle(fontSize: _kTableFontSize, color: Color(0xFF94A3B8), fontWeight: FontWeight.w900)),
           SizedBox(height: _s(2)),
-          Text(group.yearLevel.isEmpty ? '-' : group.yearLevel, style: const TextStyle(fontWeight: FontWeight.w800, color: Color(0xFF475569), fontSize: _kTableFontSize)),
+          Text(group.yearLevel.isEmpty ? '-' : group.yearLevel, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w800, color: Color(0xFF475569), fontSize: _kTableFontSize)),
         ],
       ),
     );
@@ -2463,21 +3116,32 @@ class _StudentGradeTable extends StatelessWidget {
   static Widget _subjectCell(GradeRow? row, void Function(GradeRow row) onSubjectTap) {
     if (row == null) {
       return Container(
-        constraints: BoxConstraints(minHeight: _s(82)),
+        height: _s(_kDataRowHeight),
         padding: EdgeInsets.all(_s(6)),
         alignment: Alignment.center,
-        child: const Text('-', style: TextStyle(color: Color(0xFFCBD5E1), fontWeight: FontWeight.w900)),
+        child: Container(
+          height: double.infinity,
+          width: double.infinity,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: const Color(0xFFF8FAFC),
+            borderRadius: BorderRadius.circular(_s(9)),
+            border: Border.all(color: const Color(0xFFE2E8F0)),
+          ),
+          child: const Text('-', style: TextStyle(color: Color(0xFFCBD5E1), fontWeight: FontWeight.w900)),
+        ),
       );
     }
 
     final visual = _visualForRow(row);
+    final description = row.excelSubjectDescription.trim();
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: () => onSubjectTap(row),
       child: MouseRegion(
         cursor: SystemMouseCursors.click,
         child: Container(
-          constraints: BoxConstraints(minHeight: _s(82)),
+          height: _s(_kDataRowHeight),
           padding: EdgeInsets.all(_s(5)),
           child: DecoratedBox(
             decoration: BoxDecoration(
@@ -2501,11 +3165,21 @@ class _StudentGradeTable extends StatelessWidget {
                         Icon(Icons.control_point_duplicate_rounded, color: _StatusVisual.duplicate.color, size: 13),
                     ],
                   ),
-                  if (row.excelSubjectDescription.trim().isNotEmpty) ...[
-                    SizedBox(height: _s(3)),
-                    Text('Desc: ${row.excelSubjectDescription}', maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: _kTableFontSize, color: Color(0xFF475569), fontWeight: FontWeight.w800)),
-                  ],
-                  SizedBox(height: _s(3)),
+                  SizedBox(height: _s(2)),
+                  SizedBox(
+                    height: _s(40),
+                    child: Text(
+                      description.isEmpty ? 'No UNO description' : description,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: _kTableFontSize,
+                        color: description.isEmpty ? const Color(0xFF94A3B8) : const Color(0xFF475569),
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                  const Spacer(),
                   _SubjectLine(label: 'G', excel: row.excelGrade, db: row.databaseGrade, warn: row.gradeMatches == false),
                   SizedBox(height: _s(1)),
                   _SubjectLine(label: 'U', excel: row.units, db: row.databaseCredits ?? row.subjectUnits, warn: row.unitsMatch == false),
@@ -2662,7 +3336,7 @@ class _DatabaseMatchesTable extends StatelessWidget {
           decoration: BoxDecoration(color: Color(0xFFF1F5F9)),
           children: [
             _TinyHeader('Ref'),
-            _TinyHeader('Period'),
+            _TinyHeader('Academic year'),
             _TinyHeader('Grade'),
             _TinyHeader('Credits'),
             _TinyHeader('Description'),
@@ -2909,7 +3583,7 @@ class _StatusVisual {
   static const unitsDiff = _StatusVisual(label: 'Units differ', color: Color(0xFF0891B2), background: Color(0xFFECFEFF), border: Color(0xFF67E8F9));
   static const studentMissing = _StatusVisual(label: 'Student not found', color: Color(0xFFBE123C), background: Color(0xFFFFF1F2), border: Color(0xFFFDA4AF));
   static const subjectMissing = _StatusVisual(label: 'Subject not found', color: Color(0xFFC2410C), background: Color(0xFFFFF7ED), border: Color(0xFFFDBA74));
-  static const duplicate = _StatusVisual(label: 'Duplicate DB grades', color: Color(0xFF7C3AED), background: Color(0xFFF5F3FF), border: Color(0xFFC4B5FD));
+  static const duplicate = _StatusVisual(label: 'Duplicate SMS grades', color: Color(0xFF7C3AED), background: Color(0xFFF5F3FF), border: Color(0xFFC4B5FD));
   static const unchecked = _StatusVisual(label: 'Unchecked', color: Color(0xFF64748B), background: Color(0xFFF1F5F9), border: Color(0xFFCBD5E1));
 }
 

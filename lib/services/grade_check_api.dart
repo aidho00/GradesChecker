@@ -22,6 +22,19 @@ class GradeCheckerAuthSession {
 }
 
 
+
+class InsertSmsGradeResult {
+  const InsertSmsGradeResult({
+    required this.created,
+    required this.message,
+    required this.reference,
+  });
+
+  final bool created;
+  final String message;
+  final String reference;
+}
+
 class CreateStudentProfileResult {
   const CreateStudentProfileResult({
     required this.created,
@@ -87,6 +100,8 @@ class GradeCheckApi {
   Uri get createStudentProfileUri => _siblingUri('create_student_profile.php');
 
   Uri get coursesUri => _siblingUri('courses.php');
+
+  Uri get insertGradeUri => _siblingUri('insert_grade.php');
 
 
 
@@ -223,7 +238,7 @@ class GradeCheckApi {
 
     request.onLoad.listen((_) async {
       try {
-        onPhase?.call('Decoding parsed Excel response');
+        onPhase?.call('Decoding UNO response');
         await Future<void>.delayed(Duration.zero);
         final int status = request.status ?? 0;
         final body = request.responseText ?? '';
@@ -232,7 +247,7 @@ class GradeCheckApi {
         }
         final decoded = jsonDecode(body) as Map<String, dynamic>;
         if (decoded['ok'] != true) {
-          throw Exception(decoded['message']?.toString() ?? 'Unable to parse Excel on server.');
+          throw Exception(decoded['message']?.toString() ?? 'Unable to parse UNO file on server.');
         }
         final rawRows = (decoded['rows'] as List<dynamic>? ?? [])
             .whereType<Map<String, dynamic>>()
@@ -291,7 +306,7 @@ class GradeCheckApi {
 
     final decoded = jsonDecode(body) as Map<String, dynamic>;
     if (decoded['ok'] != true) {
-      throw Exception(decoded['message']?.toString() ?? 'Unable to parse Excel on server.');
+      throw Exception(decoded['message']?.toString() ?? 'Unable to parse UNO file on server.');
     }
 
     return (decoded['rows'] as List<dynamic>? ?? [])
@@ -324,7 +339,7 @@ class GradeCheckApi {
 
     final decoded = jsonDecode(body) as Map<String, dynamic>;
     if (decoded['ok'] != true) {
-      throw Exception(decoded['message']?.toString() ?? 'Unable to parse Excel on server.');
+      throw Exception(decoded['message']?.toString() ?? 'Unable to parse UNO file on server.');
     }
 
     return (decoded['rows'] as List<dynamic>? ?? [])
@@ -466,6 +481,50 @@ class GradeCheckApi {
       student: decoded['student'] is Map<String, dynamic>
           ? decoded['student'] as Map<String, dynamic>
           : <String, dynamic>{},
+    );
+  }
+
+
+  Future<InsertSmsGradeResult> insertSmsGrade({
+    required String studentId,
+    required String subjectId,
+    required String periodId,
+    required String grade,
+    required String credits,
+    required String course,
+    required String yearLevel,
+    required int subjectNo,
+  }) async {
+    final response = await http
+        .post(
+          insertGradeUri,
+          headers: _jsonHeaders,
+          body: jsonEncode({
+            'student_id': studentId,
+            'subject_id': subjectId,
+            'period_id': periodId,
+            'grade': grade,
+            'credits': credits,
+            'course': course,
+            'year_level': yearLevel,
+            'subject_no': subjectNo,
+          }),
+        )
+        .timeout(const Duration(seconds: 45));
+
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw _apiError(response.statusCode, response.body);
+    }
+
+    final decoded = jsonDecode(response.body) as Map<String, dynamic>;
+    if (decoded['ok'] != true) {
+      throw Exception(decoded['message']?.toString() ?? 'Unable to insert grade.');
+    }
+
+    return InsertSmsGradeResult(
+      created: decoded['created'] == true,
+      message: decoded['message']?.toString() ?? 'Grade saved.',
+      reference: decoded['sg_id']?.toString() ?? '',
     );
   }
 
