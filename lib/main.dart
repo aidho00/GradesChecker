@@ -42,7 +42,7 @@ class GradesCheckerApp extends StatelessWidget {
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: seed),
         useMaterial3: true,
-        scaffoldBackgroundColor: const Color(0xFFF3F6FB),
+        scaffoldBackgroundColor: const Color(0xFFF6F8FC),
         visualDensity: VisualDensity.compact,
         materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
         textTheme: ThemeData.light().textTheme,
@@ -1116,20 +1116,26 @@ class _GradesCheckerPageState extends State<GradesCheckerPage> {
                 FilledButton.icon(
                   onPressed: saving
                       ? null
-                      : () async {
-                          final grade = gradeController.text.trim();
-                          if (grade.isEmpty) {
-                            setState(() => _status = 'Grade is required before inserting to SMS.');
+                      : () {
+                          final subjectIdToSave = selectedSubjectId;
+                          final gradeToSave = gradeController.text.trim();
+                          final creditsToSave = creditsController.text.trim();
+
+                          if (gradeToSave.isEmpty) {
+                            if (mounted) setState(() => _status = 'Grade is required before saving to SMS.');
                             return;
                           }
-                          setDialogState(() => saving = true);
+
                           Navigator.of(dialogContext).pop();
-                          await _insertSmsGradeForRow(
-                            row,
-                            subjectId: selectedSubjectId,
-                            grade: grade,
-                            credits: creditsController.text.trim(),
-                          );
+                          WidgetsBinding.instance.addPostFrameCallback((_) {
+                            if (!mounted) return;
+                            _insertSmsGradeForRow(
+                              row,
+                              subjectId: subjectIdToSave,
+                              grade: gradeToSave,
+                              credits: creditsToSave,
+                            );
+                          });
                         },
                   style: FilledButton.styleFrom(textStyle: const TextStyle(fontSize: _kBodyFontSize, fontWeight: FontWeight.w800)),
                   icon: saving ? SizedBox(width: _s(14), height: _s(14), child: const CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.add_task_rounded, size: 17),
@@ -1802,24 +1808,36 @@ class _GradesCheckerPageState extends State<GradesCheckerPage> {
     return Scaffold(
       bottomNavigationBar: _rows.isEmpty || groups.isEmpty ? null : _buildStickyHorizontalScrollBar(),
       body: SafeArea(
-        child: SingleChildScrollView(
-          padding: EdgeInsets.fromLTRB(_s(14), _s(14), _s(14), _rows.isEmpty ? _s(20) : _s(64)),
-          child: Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 1920),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  _buildHeader(),
-                  SizedBox(height: _s(9)),
-                  _buildSetupPanel(),
-                  SizedBox(height: _s(9)),
-                  _buildDataWorkspace(groups),
-                  SizedBox(height: _s(20)),
-                ],
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final wide = constraints.maxWidth >= _s(1260);
+            return SingleChildScrollView(
+              padding: EdgeInsets.fromLTRB(
+                wide ? _s(18) : _s(12),
+                wide ? _s(18) : _s(12),
+                wide ? _s(18) : _s(12),
+                _rows.isEmpty ? _s(20) : _s(64),
               ),
-            ),
-          ),
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 1760),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      _buildTopBar(),
+                      SizedBox(height: _s(10)),
+                      _buildDashboardHero(),
+                      SizedBox(height: _s(12)),
+                      _buildSetupPanel(),
+                      SizedBox(height: _s(12)),
+                      _buildDataWorkspace(groups),
+                      SizedBox(height: _s(20)),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
         ),
       ),
     );
@@ -1944,6 +1962,191 @@ class _GradesCheckerPageState extends State<GradesCheckerPage> {
     );
   }
 
+  Widget _buildTopBar() {
+    return Container(
+      padding: EdgeInsets.symmetric(horizontal: _s(12), vertical: _s(10)),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(_s(16)),
+        border: Border.all(color: const Color(0xFFE5EAF3)),
+        boxShadow: const [BoxShadow(color: Color(0x0A0F172A), blurRadius: 14, offset: Offset(0, 6))],
+      ),
+      child: Row(
+        children: [
+          _DashboardLogo(size: _s(34), iconSize: 18),
+          SizedBox(width: _s(10)),
+          const Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Grades Checker', style: TextStyle(fontSize: _kHeaderFontSize, fontWeight: FontWeight.w900, color: Color(0xFF172554))),
+                SizedBox(height: 2),
+                Text('UNO to SMS comparison', style: TextStyle(fontSize: _kBodyFontSize, color: Color(0xFF64748B))),
+              ],
+            ),
+          ),
+          IconButton(
+            tooltip: 'Connection settings',
+            onPressed: _openConnectionSettings,
+            icon: const Icon(Icons.settings_rounded, size: 18),
+          ),
+          IconButton(
+            tooltip: 'Logout',
+            onPressed: _logout,
+            icon: const Icon(Icons.logout_rounded, size: 18),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSidebar() {
+    return Container(
+      width: _s(282),
+      margin: EdgeInsets.all(_s(14)),
+      padding: EdgeInsets.all(_s(14)),
+      decoration: BoxDecoration(
+        color: const Color(0xFF111827),
+        borderRadius: BorderRadius.circular(_s(22)),
+        boxShadow: const [BoxShadow(color: Color(0x220F172A), blurRadius: 28, offset: Offset(0, 14))],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              _DashboardLogo(size: _s(38), iconSize: 19),
+              SizedBox(width: _s(10)),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Grades Checker', maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: _kHeaderFontSize, fontWeight: FontWeight.w900, color: Colors.white)),
+                    SizedBox(height: 2),
+                    Text('UNO • SMS', style: TextStyle(fontSize: _kBodyFontSize, color: Color(0xFFCBD5E1))),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          SizedBox(height: _s(18)),
+          _SideNavItem(icon: Icons.dashboard_rounded, label: 'Dashboard', active: true),
+          _SideNavItem(icon: Icons.table_chart_rounded, label: 'Data table', active: false),
+          _SideNavItem(icon: Icons.person_add_alt_1_rounded, label: 'Profiles', active: false),
+          _SideNavItem(icon: Icons.edit_note_rounded, label: 'Grade updates', active: false),
+          const Spacer(),
+          Container(
+            padding: EdgeInsets.all(_s(12)),
+            decoration: BoxDecoration(
+              color: const Color(0x1AFFFFFF),
+              borderRadius: BorderRadius.circular(_s(16)),
+              border: Border.all(color: const Color(0x22FFFFFF)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Signed in', style: TextStyle(fontSize: _kTableFontSize, color: Color(0xFF94A3B8), fontWeight: FontWeight.w800)),
+                SizedBox(height: _s(4)),
+                Text(
+                  _authDisplayName.isNotEmpty ? _authDisplayName : _authUsername,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: _kBodyFontSize, color: Colors.white, fontWeight: FontWeight.w900),
+                ),
+                SizedBox(height: _s(10)),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: _openConnectionSettings,
+                        icon: const Icon(Icons.settings_rounded, size: 15),
+                        label: const Text('Settings'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.white,
+                          side: const BorderSide(color: Color(0x55FFFFFF)),
+                          textStyle: const TextStyle(fontSize: _kTableFontSize, fontWeight: FontWeight.w900),
+                          padding: EdgeInsets.symmetric(horizontal: _s(9), vertical: _s(9)),
+                        ),
+                      ),
+                    ),
+                    SizedBox(width: _s(8)),
+                    IconButton.filledTonal(
+                      tooltip: 'Logout',
+                      onPressed: _logout,
+                      icon: const Icon(Icons.logout_rounded, size: 16),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDashboardHero() {
+    final periodLabel = _selectedPeriod?.label ?? (_loadingPeriods ? 'Loading academic years...' : 'Select academic year');
+    return Container(
+      padding: EdgeInsets.all(_s(16)),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [Color(0xFF1E3A8A), Color(0xFF2563EB), Color(0xFF14B8A6)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(_s(22)),
+        boxShadow: const [BoxShadow(color: Color(0x1F2563EB), blurRadius: 30, offset: Offset(0, 14))],
+      ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final isNarrow = constraints.maxWidth < _s(820);
+          final titleBlock = Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                padding: EdgeInsets.symmetric(horizontal: _s(10), vertical: _s(6)),
+                decoration: BoxDecoration(color: const Color(0x22FFFFFF), borderRadius: BorderRadius.circular(999)),
+                child: const Text('UNO import dashboard', style: TextStyle(fontSize: _kTableFontSize, color: Colors.white, fontWeight: FontWeight.w900)),
+              ),
+              SizedBox(height: _s(10)),
+              const Text(
+                'UNO to SMS Grade Checker',
+                style: TextStyle(color: Colors.white, fontSize: _kHeaderFontSize, fontWeight: FontWeight.w900, height: 1.05),
+              ),
+              SizedBox(height: _s(7)),
+              const Text(
+                'Upload, validate, compare, and repair grade records from one responsive data-table workspace.',
+                style: TextStyle(color: Color(0xFFE0F2FE), fontSize: _kBodyFontSize, height: 1.35, fontWeight: FontWeight.w700),
+              ),
+            ],
+          );
+          final infoChips = Wrap(
+            spacing: _s(8),
+            runSpacing: _s(8),
+            alignment: isNarrow ? WrapAlignment.start : WrapAlignment.end,
+            children: [
+              _HeroChip(icon: Icons.calendar_month_rounded, label: periodLabel),
+              _HeroChip(icon: Icons.insert_drive_file_rounded, label: _fileName.isEmpty ? 'No UNO file uploaded' : _fileName),
+              _HeroChip(icon: Icons.fact_check_rounded, label: '${_checkedCount}/${_rows.length} checked'),
+            ],
+          );
+          if (isNarrow) {
+            return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [titleBlock, SizedBox(height: _s(14)), infoChips]);
+          }
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Expanded(flex: 5, child: titleBlock),
+              SizedBox(width: _s(16)),
+              Expanded(flex: 4, child: Align(alignment: Alignment.centerRight, child: infoChips)),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
   Widget _buildHeader() {
     return Row(
       children: [
@@ -2028,9 +2231,15 @@ class _GradesCheckerPageState extends State<GradesCheckerPage> {
   }
 
   Widget _buildSetupPanel() {
-    return Card(
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(_s(18)),
+        border: Border.all(color: const Color(0xFFE5EAF3)),
+        boxShadow: const [BoxShadow(color: Color(0x080F172A), blurRadius: 18, offset: Offset(0, 8))],
+      ),
       child: Padding(
-        padding: EdgeInsets.all(_s(9)),
+        padding: EdgeInsets.all(_s(12)),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -2040,9 +2249,9 @@ class _GradesCheckerPageState extends State<GradesCheckerPage> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('UNO import check setup', style: TextStyle(fontSize: _kHeaderFontSize, fontWeight: FontWeight.w900)),
+                      Text('Import setup', style: TextStyle(fontSize: _kHeaderFontSize, fontWeight: FontWeight.w900)),
                       SizedBox(height: 3),
-                      Text('Select the SMS academic year, upload the UNO promotional list, then run the comparison.', style: TextStyle(color: Color(0xFF64748B), fontSize: _kBodyFontSize)),
+                      Text('Choose an academic year, upload the UNO list, then run the comparison.', style: TextStyle(color: Color(0xFF64748B), fontSize: _kBodyFontSize)),
                     ],
                   ),
                 ),
@@ -2272,8 +2481,14 @@ class _GradesCheckerPageState extends State<GradesCheckerPage> {
     final end = math.min(start + _pageSize, groups.length);
     final pagedGroups = groups.isEmpty ? <_StudentGradeGroup>[] : groups.sublist(start, end);
 
-    return Card(
+    return Container(
       clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(_s(18)),
+        border: Border.all(color: const Color(0xFFE5EAF3)),
+        boxShadow: const [BoxShadow(color: Color(0x080F172A), blurRadius: 18, offset: Offset(0, 8))],
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -2282,6 +2497,32 @@ class _GradesCheckerPageState extends State<GradesCheckerPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
+                Row(
+                  children: [
+                    Container(
+                      width: _s(34),
+                      height: _s(34),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFEFF6FF),
+                        borderRadius: BorderRadius.circular(_s(12)),
+                      ),
+                      child: const Icon(Icons.table_chart_rounded, color: Color(0xFF2563EB), size: 18),
+                    ),
+                    SizedBox(width: _s(10)),
+                    const Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('Grade comparison data table', style: TextStyle(fontSize: _kHeaderFontSize, fontWeight: FontWeight.w900, color: Color(0xFF172554))),
+                          SizedBox(height: 2),
+                          Text('Search, filter, inspect, and repair UNO subject records in one workspace.', style: TextStyle(fontSize: _kBodyFontSize, color: Color(0xFF64748B))),
+                        ],
+                      ),
+                    ),
+                    _SoftPill(icon: Icons.visibility_rounded, label: '${groups.length} students'),
+                  ],
+                ),
+                SizedBox(height: _s(12)),
                 _buildMetrics(),
                 SizedBox(height: _s(10)),
                 _buildToolbar(groups.length),
@@ -2729,6 +2970,84 @@ class _GradesCheckerPageState extends State<GradesCheckerPage> {
 }
 
 
+
+
+class _DashboardLogo extends StatelessWidget {
+  const _DashboardLogo({required this.size, required this.iconSize});
+
+  final double size;
+  final double iconSize;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(colors: [Color(0xFF2563EB), Color(0xFF14B8A6)], begin: Alignment.topLeft, end: Alignment.bottomRight),
+        borderRadius: BorderRadius.circular(size * 0.35),
+        boxShadow: const [BoxShadow(color: Color(0x332563EB), blurRadius: 12, offset: Offset(0, 6))],
+      ),
+      child: Icon(Icons.fact_check_rounded, color: Colors.white, size: iconSize),
+    );
+  }
+}
+
+class _HeroChip extends StatelessWidget {
+  const _HeroChip({required this.icon, required this.label});
+
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      constraints: BoxConstraints(maxWidth: _s(360)),
+      padding: EdgeInsets.symmetric(horizontal: _s(10), vertical: _s(8)),
+      decoration: BoxDecoration(
+        color: const Color(0x22FFFFFF),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: const Color(0x33FFFFFF)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 15, color: Colors.white),
+          SizedBox(width: _s(7)),
+          Flexible(child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontSize: _kTableFontSize, fontWeight: FontWeight.w900))),
+        ],
+      ),
+    );
+  }
+}
+
+class _SideNavItem extends StatelessWidget {
+  const _SideNavItem({required this.icon, required this.label, required this.active});
+
+  final IconData icon;
+  final String label;
+  final bool active;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: EdgeInsets.only(bottom: _s(7)),
+      padding: EdgeInsets.symmetric(horizontal: _s(10), vertical: _s(10)),
+      decoration: BoxDecoration(
+        color: active ? const Color(0xFF2563EB) : Colors.transparent,
+        borderRadius: BorderRadius.circular(_s(13)),
+        border: Border.all(color: active ? const Color(0xFF3B82F6) : const Color(0x00FFFFFF)),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, size: 17, color: active ? Colors.white : const Color(0xFFCBD5E1)),
+          SizedBox(width: _s(9)),
+          Expanded(child: Text(label, style: TextStyle(fontSize: _kBodyFontSize, fontWeight: FontWeight.w900, color: active ? Colors.white : const Color(0xFFCBD5E1)))),
+        ],
+      ),
+    );
+  }
+}
 
 class _ModernDialogScaffold extends StatelessWidget {
   const _ModernDialogScaffold({
